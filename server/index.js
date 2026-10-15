@@ -1,6 +1,7 @@
 const express = require('express')
 const cors = require('cors')
 const supabase = require('./supabase')
+const { getExchangeRates } = require('./integrations/currencyAdapter')
 
 const app = express()
 const PORT = 3000
@@ -10,6 +11,20 @@ app.use(express.json())
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' })
+})
+
+app.get('/api/currencies', async (req, res) => {
+  try {
+    const data = await getExchangeRates()
+
+    res.json(data)
+  } catch (error) {
+    console.error('Currency API error:', error)
+
+    res.status(500).json({
+      error: 'Failed to fetch exchange rates',
+    })
+  }
 })
 
 app.get('/api/products', async (req, res) => {
