@@ -1,76 +1,101 @@
+
 # Oscar's Random Shop
 
-A simple fullstack e-commerce application built as part of the Systemutveckling course at Medieinstitutet.
+A fullstack e-commerce application built with React, Express and PostgreSQL as part of my Fullstack Developer studies at Medieinstitutet.
 
-The application allows customers to browse products, add items to a shopping cart and place an order. The admin view allows products to be created and edited, and incoming orders to be reviewed.
-
-## Live demo
-
-https://fsu25d-systemutveckling-ecommerce-c.vercel.app
-
-The admin view is available through the **Admin** button in the navigation. No login is required.
+The project started as an individual assignment in system development and is currently being extended with third-party API integrations.
 
 ## Features
 
-- Product listing
+- Product catalog with responsive layout
 - Shopping cart with quantities and totals
-- Checkout with customer name and email
-- Orders stored in the database
-- Admin product management
-- Admin order overview
-- Responsive storefront and admin interface
+- Checkout and order creation
+- Product management (create and edit)
+- Admin overview of incoming orders
+- Persistent storage using PostgreSQL
+
+### In progress
+
+- Currency conversion using the Frankfurter exchange rate API
 
 ## Tech stack
 
-### Frontend
-- React
-- Vite
-- CSS
+| Layer | Technologies |
+| --- | --- |
+| Frontend | React, JavaScript, Vite, CSS |
+| Backend | Node.js, Express, REST API |
+| Database | PostgreSQL, Supabase |
+| Deployment | Vercel |
+| Version control | Git, GitHub |
 
-### Backend
-- Node.js
-- Express
+## Architecture
 
-### Database
-- Supabase
-- PostgreSQL
+The application consists of three main parts:
 
-### Deployment
-- Vercel
+1. **React frontend** – Handles the user interface, shopping cart and checkout.
+2. **Express backend** – Provides REST endpoints for products, orders and external integrations.
+3. **Supabase/PostgreSQL** – Stores products, orders and order items.
 
-## Documentation
+The frontend communicates with the backend through HTTP requests. The backend handles database operations and communicates with external APIs.
 
-Project documentation is available in the `docs/` directory:
+## Project structure
 
-- `docs/sitemap.md`
-- `docs/er-diagram.md`
-- `docs/project-plan.md`
-
-Database migrations are available in:
-
-- `server/db/`
+- `client/` – React frontend
+- `server/` – Express backend and database connection
+- `server/integrations/` – External API integrations
+- `server/db/` – Database migrations
+- `docs/` – Project documentation
 
 ## Running locally
 
 ### Backend
 
-```bash```
+```bash
 cd server
 npm install
 npm start
+```
 
-The backend runs on:
-http://localhost:3000
+Create a `server/.env` file containing the required Supabase environment variables:
 
-A local server/.env file is required with the Supabase environment variables used by the backend.
+```env
+SUPABASE_URL=your_supabase_url
+SUPABASE_SECRET_KEY=your_server_side_secret
+```
+
+Never commit real credentials to Git.
+
+The backend runs on `http://localhost:3000`.
 
 ### Frontend
 
-```bash```
+```bash
 cd client
 npm install
 npm run dev
+```
 
-Vite will print the local frontend URL in the terminal.
+Vite will display the local development URL.
 
-During local development, Vite proxies /api requests to the backend on port 3000.
+During local development, Vite proxies `/api` requests to the Express backend.
+
+## Documentation
+
+- [Project plan](docs/project-plan.md)
+- [Database ER diagram](docs/er-diagram.md)
+- [Sitemap](docs/sitemap.md)
+
+## Known limitations
+
+This is an educational project, not a production-ready e-commerce platform.
+
+- Admin functionality currently has no authentication or authorization.
+- Order endpoints are not protected against unauthorized access.
+- Error handling and input validation need further improvement.
+- Currency conversion is still under development.
+
+The public demo should not be used with real personal information or payment data.
+
+## About
+
+Built by Oscar Wersäll as part of the Fullstack Developer program at Medieinstitutet, Stockholm.
