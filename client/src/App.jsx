@@ -39,6 +39,14 @@ function App() {
     0
   )
 
+  const [searchInput, setSearchInput] = useState('')
+  const [searchResults, setSearchResults] = useState(null)
+  const [searchPage, setSearchPage] = useState(1)
+  const [searchTotalPages, setSearchTotalPages] = useState(0)
+  const [searchTotal, setSearchTotal] = useState(0)
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [searchError, setSearchError] = useState('')
+
   async function handleImport(format) {
     if (!adminKey.trim()) {
       setImportError('Ange adminnyckeln först.')
@@ -149,6 +157,38 @@ function App() {
 
     fetchExchangeRates()
   }, [])
+
+  async function searchCatalog(page = 1) {
+    setSearchLoading(true)
+    setSearchError('')
+
+    try {
+      const params = new URLSearchParams({
+        q: searchInput.trim(),
+        page: String(page),
+        pageSize: '5',
+      })
+
+      const response = await fetch(
+        `${API_URL}/api/search?${params}`
+      )
+
+      if (!response.ok) {
+        throw new Error('Kunde inte hämta sökresultaten.')
+      }
+
+      const data = await response.json()
+
+      setSearchResults(data.products)
+      setSearchPage(data.page)
+      setSearchTotalPages(data.totalPages)
+      setSearchTotal(data.total)
+    } catch (error) {
+      setSearchError(error.message)
+    } finally {
+      setSearchLoading(false)
+    }
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -338,14 +378,62 @@ function App() {
             </p>
           </section>
 
+          <form
+            className="search-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              searchCatalog(1)
+            }}
+          >
+            <input
+              type="search"
+              placeholder="Sök produkter..."
+              aria-label="Sök produkter"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={searchLoading}
+            >
+              Sök
+            </button>
+
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => {
+                setSearchInput('')
+                setSearchResults(null)
+                setSearchError('')
+              }}
+            >
+              Visa alla
+            </button>
+          </form>
+
+          {searchLoading && <p>Söker...</p>}
+
+          {searchError && (
+            <p className="form-error" role="alert">
+              {searchError}
+            </p>
+          )}
+
           <section className="product-section">
             <div className="section-heading">
               <h2>Shop all</h2>
-              <p>{products.length} products</p>
+              <p>
+                {searchResults === null
+                  ? `${products.length} products`
+                  : `${searchTotal} sökträffar`}
+              </p>
             </div>
 
             <div className="product-grid">
-              {products.map((product) => (
+              {(searchResults ?? products).map((product) => (
                 <article className="product-card" key={product.id}>
                   <div className="product-image-placeholder">
                     <span>{product.name.charAt(0)}</span>
@@ -374,6 +462,34 @@ function App() {
                 </article>
               ))}
             </div>
+
+            {searchResults !== null && (
+              <div className="search-pagination">
+                <button
+                  type="button"
+                  disabled={searchLoading || searchPage <= 1}
+                  onClick={() => searchCatalog(searchPage - 1)}
+                >
+                  Föregående
+                </button>
+
+                <span>
+                  Sida {searchPage} av {searchTotalPages}
+                </span>
+
+                <button
+                  type="button"
+                  disabled={
+                    searchLoading ||
+                    searchPage >= searchTotalPages
+                  }
+                  onClick={() => searchCatalog(searchPage + 1)}
+                >
+                  Nästa
+                </button>
+              </div>
+            )}
+
           </section>
 
           <section id="cart" className="cart-section">

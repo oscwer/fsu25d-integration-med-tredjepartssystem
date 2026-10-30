@@ -759,3 +759,24 @@ textarea:focus-visible {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+.search-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.search-form input {
+  flex: 1;
+  min-width: 200px;
+  padding: 12px;
+}
+
+.search-pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin: 24px 0;
+}
