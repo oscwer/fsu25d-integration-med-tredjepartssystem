@@ -15,6 +15,12 @@ const {
   upsertProducts,
 } = require('./services/productImportService')
 
+const { z } = require('zod')
+const {
+  searchProducts,
+  indexProducts,
+} = require('./integrations/algoliaAdapter')
+
 async function importSupplierProducts(format) {
   let products
 
@@ -33,6 +39,29 @@ async function importSupplierProducts(format) {
 
   const { created, updated } = await upsertProducts(valid)
 
+  // Hämta produkterna med deras databas-ID
+  const articleNumbers = valid.map(
+    (product) => product.article_number
+  )
+
+  const { data: savedProducts, error: dbError } = await supabase
+    .from('products')
+    .select('id, article_number, name, description, price')
+    .in('article_number', articleNumbers)
+
+  let searchSynced = false
+
+  if (dbError) {
+    console.error('Could not load products for Algolia:', dbError.message)
+  } else {
+    try {
+      await indexProducts(savedProducts)
+      searchSynced = true
+    } catch (error) {
+      console.error('Algolia import sync failed:', error.message)
+    }
+  }
+
   return {
     format,
     total: products.length,
@@ -40,6 +69,17 @@ async function importSupplierProducts(format) {
     updated,
     skipped: skipped.length,
     skippedProducts: skipped,
+    searchSynced,
+  }
+}
+
+async function syncProductToAlgolia(product) {
+  try {
+    await indexProducts([product])
+    return true
+  } catch (error) {
+    console.error('Algolia synchronization failed:', error.message)
+    return false
   }
 }
 
@@ -106,7 +146,12 @@ app.post('/api/products', async (req, res) => {
     })
   }
 
-  res.status(201).json(data)
+  const searchSynced = await syncProductToAlgolia(data)
+
+  res.status(201).json({
+    ...data,
+    searchSynced,
+  })
 })
 
 app.put('/api/products/:id', async (req, res) => {
@@ -136,8 +181,12 @@ app.put('/api/products/:id', async (req, res) => {
       error: 'Failed to update product',
     })
   }
+const searchSynced = await syncProductToAlgolia(data)
 
-  res.json(data)
+  res.json({
+    ...data,
+    searchSynced,
+  })
 })
 
 app.post('/api/orders', async (req, res) => {
@@ -282,6 +331,36 @@ app.post('/api/import/xml', requireImportAdmin, async (req, res) => {
     console.error('XML import failed:', error)
     res.status(500).json({
       error: 'XML import failed',
+    })
+  }
+})
+
+const searchQuerySchema = z.object({
+  q: z.string().max(100).default(''),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(10),
+})
+
+app.get('/api/search', async (req, res) => {
+  const parsed = searchQuerySchema.safeParse(req.query)
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: 'Invalid search parameters',
+      details: parsed.error.issues,
+    })
+  }
+
+  try {
+    const { q, page, pageSize } = parsed.data
+    const result = await searchProducts(q, page, pageSize)
+
+    res.json(result)
+  } catch (error) {
+    console.error('Algolia search error:', error.message)
+
+    res.status(503).json({
+      error: 'Söktjänsten är tillfälligt otillgänglig.',
     })
   }
 })

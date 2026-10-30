@@ -666,6 +666,16 @@ function App() {
                 <p>Uppdaterade produkter: {importReport.updated}</p>
                 <p>Överhoppade produkter: {importReport.skipped}</p>
 
+                {importReport.searchSynced ? (
+                  <p role="status">
+                    Sökindexet är uppdaterat.
+                  </p>
+                ) : (
+                  <p className="form-error" role="alert">
+                    Produkterna sparades, men sökindexet kunde inte uppdateras.
+                  </p>
+                )}
+
                 {importReport.skippedProducts.map((product) => (
                   <p key={product.article_number}>
                     {product.article_number}: {product.reason}
