@@ -12,6 +12,7 @@ async function main() {
   const { data: products, error } = await supabase
     .from('products')
     .select('id, article_number, name, description, price')
+    .eq('is_active', true)
     .order('id', { ascending: true })
 
   if (error) {

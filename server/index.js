@@ -19,6 +19,7 @@ const { z } = require('zod')
 const {
   searchProducts,
   indexProducts,
+  removeProductFromIndex,
 } = require('./integrations/algoliaAdapter')
 
 async function importSupplierProducts(format) {
@@ -48,6 +49,7 @@ async function importSupplierProducts(format) {
     .from('products')
     .select('id, article_number, name, description, price')
     .in('article_number', articleNumbers)
+    .eq('is_active', true)
 
   let searchSynced = false
 
@@ -111,10 +113,13 @@ app.get('/api/products', async (req, res) => {
   const { data, error } = await supabase
     .from('products')
     .select('*')
+    .eq('is_active', true)
 
   if (error) {
     console.error('Database error:', error)
-    return res.status(500).json({ error: 'Failed to fetch products' })
+    return res.status(500).json({
+      error: 'Failed to fetch products',
+    })
   }
 
   res.json(data)
@@ -185,6 +190,55 @@ const searchSynced = await syncProductToAlgolia(data)
 
   res.json({
     ...data,
+    searchSynced,
+  })
+})
+
+app.delete('/api/products/:id', requireImportAdmin, async (req, res) => {
+  const { id } = req.params
+
+  if (!/^\d+$/.test(id)) {
+    return res.status(400).json({
+      error: 'Invalid product ID',
+    })
+  }
+
+  // Arkivera produkten i Supabase
+  const { data: product, error } = await supabase
+    .from('products')
+    .update({ is_active: false })
+    .eq('id', id)
+    .eq('is_active', true)
+    .select()
+    .maybeSingle()
+
+  if (error) {
+    console.error('Archive error:', error.message)
+
+    return res.status(500).json({
+      error: 'Failed to archive product',
+    })
+  }
+
+  if (!product) {
+    return res.status(404).json({
+      error: 'Active product not found',
+    })
+  }
+
+  // Försök ta bort produkten från Algolia
+  let searchSynced = false
+
+  try {
+    await removeProductFromIndex(product)
+    searchSynced = true
+  } catch (error) {
+    console.error('Algolia deletion failed:', error.message)
+  }
+
+  res.json({
+    message: 'Product archived',
+    productId: product.id,
     searchSynced,
   })
 })

@@ -246,6 +246,48 @@ function App() {
     setFormError('')
   }
 
+  async function handleArchiveProduct(product) {
+    const confirmed = window.confirm(
+      `Vill du arkivera "${product.name}"?`
+    )
+
+    if (!confirmed) return
+
+    if (!adminKey.trim()) {
+      alert('Ange adminnyckeln i importpanelen först.')
+      return
+    }
+
+    try {
+      const response = await fetch(
+        `${API_URL}/api/products/${product.id}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'X-Admin-Key': adminKey,
+          },
+        }
+      )
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Kunde inte arkivera produkten.')
+      }
+
+      // Ta bort produkten från listan i React.
+      setProducts((currentProducts) =>
+        currentProducts.filter((item) => item.id !== product.id)
+      )
+
+      if (!result.searchSynced) {
+        alert('Produkten arkiverades, men Algolia kunde inte uppdateras.')
+      }
+    } catch (error) {
+      alert(error.message)
+    }
+  }
+
  function handleAddToCart(product) {
   setCart((currentCart) => {
     const existingItem = currentCart.find(
@@ -762,6 +804,13 @@ function App() {
                       onClick={() => handleEdit(product)}
                     >
                       Edit
+                    </button>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => handleArchiveProduct(product)}
+                    >
+                      Arkivera
                     </button>
                   </div>
                 ))}

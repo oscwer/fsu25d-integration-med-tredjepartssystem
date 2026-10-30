@@ -48,6 +48,39 @@ async function indexProducts(products) {
   return objects.length
 }
 
+async function removeProductFromIndex(product) {
+  const objectID = product.article_number || `local-${product.id}`
+
+  const task = await adminClient.deleteObject({
+    indexName,
+    objectID,
+  })
+
+  await adminClient.waitForTask({
+    indexName,
+    taskID: task.taskID,
+  })
+}
+
+async function searchProducts(query, page, pageSize) {
+  const result = await searchClient.searchSingleIndex({
+    indexName,
+    searchParams: {
+      query,
+      page: page - 1,
+      hitsPerPage: pageSize,
+    },
+  })
+
+  return {
+    products: result.hits,
+    total: result.nbHits,
+    totalPages: result.nbPages,
+    page,
+    pageSize,
+  }
+}
+
 const adminClient = createAlgoliaClient(adminKey)
 const searchClient = createAlgoliaClient(searchKey)
 
@@ -57,5 +90,7 @@ module.exports = {
   indexName,
   mapProductToSearchObject,
   indexProducts,
+  searchProducts,
+  removeProductFromIndex,
 
 }
