@@ -193,6 +193,11 @@ function App() {
   async function handleSubmit(event) {
     event.preventDefault()
 
+    if (!adminKey.trim()) {
+      setFormError('Ange adminnyckeln i importpanelen först.')
+      return
+    }
+
     const url = editingProductId
       ? `${API_URL}/api/products/${editingProductId}`
       : `${API_URL}/api/products`
@@ -203,6 +208,7 @@ function App() {
       method,
       headers: {
         'Content-Type': 'application/json',
+        'X-Admin-Key': adminKey,
       },
       body: JSON.stringify({
         name,

@@ -125,7 +125,7 @@ app.get('/api/products', async (req, res) => {
   res.json(data)
 })
 
-app.post('/api/products', async (req, res) => {
+app.post('/api/products', requireImportAdmin, async (req, res) => {
   const { name, description, price } = req.body
 
   if (!name || price === undefined) {
@@ -159,7 +159,7 @@ app.post('/api/products', async (req, res) => {
   })
 })
 
-app.put('/api/products/:id', async (req, res) => {
+app.put('/api/products/:id', requireImportAdmin, async (req, res) => {
   const { id } = req.params
   const { name, description, price } = req.body
 
