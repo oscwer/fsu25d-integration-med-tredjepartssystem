@@ -3,15 +3,13 @@ import './App.css'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
-const formatPrice = (price) =>
-  new Intl.NumberFormat('sv-SE', {
-    style: 'currency',
-    currency: 'SEK',
-  }).format(Number(price))
+
 
 function App() {
   const [serverStatus, setServerStatus] = useState('Checking server...')
   const [products, setProducts] = useState([])
+  const [currency, setCurrency] = useState('SEK')
+  const [exchangeRates, setExchangeRates] = useState(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('')
@@ -36,6 +34,24 @@ function App() {
     0
   )
 
+  function convertPrice(price) {
+    if (currency === 'SEK' || !exchangeRates) {
+      return Number(price)
+    }
+
+    const rate = exchangeRates[currency]
+    return Number(price) * rate
+  }
+
+  function formatPrice(price) {
+    const convertedPrice = convertPrice(price)
+
+    return new Intl.NumberFormat('sv-SE', {
+      style: 'currency',
+      currency: currency,
+    }).format(convertedPrice)
+  }
+
   useEffect(() => {
     fetch(`${API_URL}/api/health`)
       .then((response) => response.json())
@@ -58,6 +74,27 @@ function App() {
       .then((data) => {
         setOrders(data)
       })
+  }, [])
+
+  useEffect(() => {
+    async function fetchExchangeRates() {
+      try {
+        const response = await fetch(`${API_URL}/api/currencies`)
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch exchange rates')
+        }
+
+        const data = await response.json()
+
+        setExchangeRates(data.rates)
+        console.log('Exchange rates:', data.rates)
+      } catch (error) {
+        console.error('Currency error:', error)
+      }
+    }
+
+    fetchExchangeRates()
   }, [])
 
   async function handleSubmit(event) {
@@ -190,6 +227,16 @@ function App() {
           </button>
 
           <nav className="main-nav">
+            <select
+              value={currency}
+              onChange={(event) => setCurrency(event.target.value)}
+              aria-label="Select currency"
+            >
+              <option value="SEK">SEK</option>
+              <option value="EUR">EUR</option>
+              <option value="USD">USD</option>
+              <option value="DKK">DKK</option>
+            </select>
             <button
               className={activeView === 'shop' ? 'nav-link active' : 'nav-link'}
               type="button"
