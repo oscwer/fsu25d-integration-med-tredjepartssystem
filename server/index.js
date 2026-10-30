@@ -22,6 +22,10 @@ const {
   removeProductFromIndex,
 } = require('./integrations/algoliaAdapter')
 
+const {
+  createCheckoutSession,
+} = require('./integrations/stripeAdapter')
+
 async function importSupplierProducts(format) {
   let products
 
@@ -84,6 +88,17 @@ async function syncProductToAlgolia(product) {
     return false
   }
 }
+
+const checkoutSchema = z.object({
+  customerName: z.string().trim().min(1),
+  customerEmail: z.email(),
+  items: z.array(
+    z.object({
+      productId: z.number().int().positive(),
+      quantity: z.number().int().min(1),
+    })
+  ).min(1),
+})
 
 const app = express()
 const PORT = 3000
@@ -415,6 +430,169 @@ app.get('/api/search', async (req, res) => {
 
     res.status(503).json({
       error: 'Söktjänsten är tillfälligt otillgänglig.',
+    })
+  }
+})
+
+app.post('/api/checkout', async (req, res) => {
+  const parsed = checkoutSchema.safeParse(req.body)
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: 'Invalid checkout data',
+      details: parsed.error.issues,
+    })
+  }
+
+  try {
+    const { customerName, customerEmail, items } = parsed.data
+
+    // Samla antal per produkt-ID.
+    const quantities = new Map()
+
+    for (const item of items) {
+      quantities.set(
+        item.productId,
+        (quantities.get(item.productId) || 0) + item.quantity
+      )
+    }
+
+    const productIds = [...quantities.keys()]
+
+    // Hämta priser och lager från databasen.
+    const { data: products, error } = await supabase
+      .from('products')
+      .select('id, name, price, stock, is_active')
+      .in('id', productIds)
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    // Kontrollera att alla beställda produkter är köpbara.
+    for (const productId of productIds) {
+      const product = products.find(p => p.id === productId)
+      const quantity = quantities.get(productId)
+
+      if (!product || !product.is_active) {
+        return res.status(400).json({
+          error: `Product ${productId} is unavailable`,
+        })
+      }
+
+      if (product.stock < quantity) {
+        return res.status(400).json({
+          error: `Insufficient stock for ${product.name}`,
+        })
+      }
+    }
+
+    // Beräkna totalpriset på servern.
+    const total = products.reduce(
+      (sum, product) =>
+        sum + Number(product.price) * quantities.get(product.id),
+      0
+    )
+
+    // 1. Skapa en order med status pending
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .insert({
+        customer_name: customerName,
+        customer_email: customerEmail,
+        status: 'pending',
+      })
+      .select()
+      .single()
+
+    if (orderError) {
+      throw new Error(`Could not create order: ${orderError.message}`)
+    }
+
+    // 2. Skapa orderrader med priser från Supabase
+    const orderItems = products.map((product) => ({
+      order_id: order.id,
+      product_id: product.id,
+      product_name: product.name,
+      unit_price: Number(product.price),
+      quantity: quantities.get(product.id),
+    }))
+
+    const { error: itemsError } = await supabase
+      .from('order_items')
+      .insert(orderItems)
+
+    if (itemsError) {
+      // Ordern skapades, men gick inte att färdigställa
+      await supabase
+        .from('orders')
+        .update({
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+        })
+        .eq('id', order.id)
+        .eq('status', 'pending')
+
+      throw new Error(`Could not create order items: ${itemsError.message}`)
+    }
+
+    // 3. Skapa Stripe Checkout-sessionen
+    let checkout
+
+    try {
+      checkout = await createCheckoutSession(
+        order.id,
+        orderItems,
+        customerEmail
+      )
+    } catch (error) {
+      // Ingen fungerande betalningssession skapades
+      await supabase
+        .from('orders')
+        .update({
+          status: 'cancelled',
+          cancelled_at: new Date().toISOString(),
+        })
+        .eq('id', order.id)
+        .eq('status', 'pending')
+
+      throw error
+    }
+
+    // 4. Koppla Stripe-sessionens ID till ordern
+    const { error: sessionError } = await supabase
+      .from('orders')
+      .update({
+        stripe_session_id: checkout.sessionId,
+      })
+      .eq('id', order.id)
+      .select()
+      .single()
+
+    if (sessionError) {
+      // Förhindra om möjligt att en okopplad session betalas
+      try {
+        await stripe.checkout.sessions.expire(checkout.sessionId)
+      } catch (expireError) {
+        console.error('Could not expire Stripe session:', expireError.message)
+      }
+
+      throw new Error(`Could not save Stripe session: ${sessionError.message}`)
+    }
+
+    // 5. Returnera betalningsadressen till React
+    res.status(201).json({
+      orderId: order.id,
+      checkoutUrl: checkout.checkoutUrl,
+      total,
+      currency: 'SEK',
+      status: 'pending',
+    })
+  } catch (error) {
+    console.error('Checkout error:', error.message)
+
+    res.status(500).json({
+      error: 'Could not validate checkout',
     })
   }
 })
