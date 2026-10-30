@@ -2,6 +2,46 @@ const express = require('express')
 const cors = require('cors')
 const supabase = require('./supabase')
 const { getExchangeRates } = require('./integrations/currencyAdapter')
+const {
+  fetchSupplierCsv,
+  parseSupplierCsv,
+  fetchSupplierXml,
+  parseSupplierXml,
+  mapXmlToSupplierProducts,
+  validateSupplierProducts,
+} = require('./integrations/supplierAdapter')
+
+const {
+  upsertProducts,
+} = require('./services/productImportService')
+
+async function importSupplierProducts(format) {
+  let products
+
+  if (format === 'csv') {
+    const csv = await fetchSupplierCsv()
+    products = parseSupplierCsv(csv)
+  } else if (format === 'xml') {
+    const xml = await fetchSupplierXml()
+    const parsed = parseSupplierXml(xml)
+    products = mapXmlToSupplierProducts(parsed)
+  } else {
+    throw new Error('Unsupported import format')
+  }
+
+  const { valid, skipped } = validateSupplierProducts(products)
+
+  const { created, updated } = await upsertProducts(valid)
+
+  return {
+    format,
+    total: products.length,
+    created,
+    updated,
+    skipped: skipped.length,
+    skippedProducts: skipped,
+  }
+}
 
 const app = express()
 const PORT = 3000
@@ -222,6 +262,43 @@ app.get('/api/orders', async (req, res) => {
   res.json(ordersWithItems)
 })
 
+app.post('/api/import/csv', requireImportAdmin, async (req, res) => {
+  try {
+    const report = await importSupplierProducts('csv')
+    res.json(report)
+  } catch (error) {
+    console.error('CSV import failed:', error)
+    res.status(500).json({
+      error: 'CSV import failed',
+    })
+  }
+})
+
+app.post('/api/import/xml', requireImportAdmin, async (req, res) => {
+  try {
+    const report = await importSupplierProducts('xml')
+    res.json(report)
+  } catch (error) {
+    console.error('XML import failed:', error)
+    res.status(500).json({
+      error: 'XML import failed',
+    })
+  }
+})
+
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
 })
+
+function requireImportAdmin(req, res, next) {
+  const expectedKey = process.env.IMPORT_ADMIN_KEY
+  const providedKey = req.get('X-Admin-Key')
+
+  if (!expectedKey || providedKey !== expectedKey) {
+    return res.status(403).json({
+      error: 'Forbidden',
+    })
+  }
+
+  next()
+}
