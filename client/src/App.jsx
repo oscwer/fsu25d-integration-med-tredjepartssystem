@@ -24,6 +24,11 @@ function App() {
 
   const [activeView, setActiveView] = useState('shop')
 
+  const [adminKey, setAdminKey] = useState('')
+  const [importLoading, setImportLoading] = useState(false)
+  const [importReport, setImportReport] = useState(null)
+  const [importError, setImportError] = useState('')
+
   const cartTotal = cart.reduce(
     (total, item) => total + item.price * item.quantity,
     0
@@ -33,6 +38,54 @@ function App() {
     (total, item) => total + item.quantity,
     0
   )
+
+  async function handleImport(format) {
+    if (!adminKey.trim()) {
+      setImportError('Ange adminnyckeln först.')
+      return
+    }
+
+    setImportLoading(true)
+    setImportError('')
+    setImportReport(null)
+
+    try {
+      const response = await fetch(
+        `${API_URL}/api/import/${format}`,
+        {
+          method: 'POST',
+          headers: {
+            'X-Admin-Key': adminKey,
+          },
+        }
+      )
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          throw new Error('Fel adminnyckel eller saknad behörighet.')
+        }
+
+        throw new Error(`Importen misslyckades (${response.status}).`)
+      }
+
+      const report = await response.json()
+      setImportReport(report)
+
+      // Hämta aktuell produktlista efter importen.
+      const productsResponse = await fetch(`${API_URL}/api/products`)
+
+      if (!productsResponse.ok) {
+        throw new Error('Importen lyckades, men produktlistan kunde inte uppdateras.')
+      }
+
+      const updatedProducts = await productsResponse.json()
+      setProducts(updatedProducts)
+    } catch (error) {
+      setImportError(error.message)
+    } finally {
+      setImportLoading(false)
+    }
+  }
 
   function convertPrice(price) {
     if (currency === 'SEK' || !exchangeRates) {
@@ -445,6 +498,65 @@ function App() {
               />
               {serverStatus === 'ok' ? 'API online' : 'API unavailable'}
             </div>
+          </section>
+          <section className="admin-panel">
+            <div className="admin-panel-heading">
+              <h2>Importera leverantörsprodukter</h2>
+              <p>Hämta produkter från leverantören via CSV eller XML.</p>
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="adminKey">Adminnyckel</label>
+              <input
+                id="adminKey"
+                type="password"
+                value={adminKey}
+                onChange={(event) => setAdminKey(event.target.value)}
+                autoComplete="off"
+              />
+            </div>
+
+            <div className="import-actions">
+              <button
+                type="button"
+                className="primary-button"
+                disabled={importLoading}
+                onClick={() => handleImport('csv')}
+              >
+                Importera CSV
+              </button>
+
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={importLoading}
+                onClick={() => handleImport('xml')}
+              >
+                Importera XML
+              </button>
+            </div>
+
+            {importLoading && <p>Importerar produkter...</p>}
+
+            {importError && (
+              <p className="form-error" role="alert">{importError}</p>
+            )}
+
+            {importReport && (
+              <div className="import-report" role="status">
+                <h3>Import klar ({importReport.format.toUpperCase()})</h3>
+
+                <p>Nya produkter: {importReport.created}</p>
+                <p>Uppdaterade produkter: {importReport.updated}</p>
+                <p>Överhoppade produkter: {importReport.skipped}</p>
+
+                {importReport.skippedProducts.map((product) => (
+                  <p key={product.article_number}>
+                    {product.article_number}: {product.reason}
+                  </p>
+                ))}
+              </div>
+            )}
           </section>
 
           <div className="admin-grid">

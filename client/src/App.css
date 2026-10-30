@@ -740,3 +740,22 @@ textarea:focus-visible {
     text-align: left;
   }
 }
+
+.import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.import-report {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
+
+.import-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
