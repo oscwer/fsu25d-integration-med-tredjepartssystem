@@ -780,3 +780,10 @@ textarea:focus-visible {
   gap: 16px;
   margin: 24px 0;
 }
+
+.product-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}

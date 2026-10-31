@@ -27,6 +27,13 @@ const {
   createCheckoutSession,
 } = require('./integrations/stripeAdapter')
 
+const multer = require('multer')
+
+const {
+  uploadProductImage,
+  deleteProductImage,
+} = require('./integrations/storageAdapter')
+
 async function importSupplierProducts(format) {
   let products
 
@@ -78,6 +85,44 @@ async function importSupplierProducts(format) {
     skippedProducts: skipped,
     searchSynced,
   }
+}
+
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+  },
+})
+
+function validateImage(file) {
+  if (!file) {
+    return 'Ingen bild har valts.'
+  }
+
+  const buffer = file.buffer
+
+  const isJpeg =
+    buffer.length >= 3 &&
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff
+
+  const pngSignature = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  ])
+
+  const isPng =
+    buffer.length >= 8 &&
+    buffer.subarray(0, 8).equals(pngSignature)
+
+  if (
+    !(file.mimetype === 'image/jpeg' && isJpeg) &&
+    !(file.mimetype === 'image/png' && isPng)
+  ) {
+    return 'Endast JPEG- och PNG-bilder är tillåtna.'
+  }
+
+  return null
 }
 
 async function syncProductToAlgolia(product) {
@@ -736,6 +781,131 @@ app.get('/api/orders/:id/status', async (req, res) => {
     stripeSessionId: order.stripe_session_id,
   })
 })
+
+app.post(
+  '/api/products/:id/image',
+  requireImportAdmin,
+  (req, res, next) => {
+    imageUpload.single('image')(req, res, (error) => {
+      if (error) {
+        return res.status(400).json({
+          error: error.code === 'LIMIT_FILE_SIZE'
+            ? 'Bilden får vara högst 5 MB.'
+            : 'Ogiltig filuppladdning.',
+        })
+      }
+
+      next()
+    })
+  },
+  async (req, res) => {
+    const productId = Number(req.params.id)
+
+    if (!Number.isSafeInteger(productId) || productId <= 0) {
+      return res.status(400).json({
+        error: 'Ogiltigt produkt-ID.',
+      })
+    }
+
+    const validationError = validateImage(req.file)
+
+    if (validationError) {
+      return res.status(400).json({
+        error: validationError,
+      })
+    }
+
+    // Kontrollera att produkten finns och är aktiv.
+    const { data: product, error: productError } = await supabase
+      .from('products')
+      .select('id, image_path')
+      .eq('id', productId)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (productError) {
+      return res.status(500).json({
+        error: 'Kunde inte hämta produkten.',
+      })
+    }
+
+    if (!product) {
+      return res.status(404).json({
+        error: 'Produkten finns inte.',
+      })
+    }
+
+    let newImage
+
+    try {
+      // Ladda upp den nya bilden först.
+      newImage = await uploadProductImage(productId, req.file)
+
+      // Spara både sökväg och publik URL.
+      let updateQuery = supabase
+        .from('products')
+        .update({
+          image_path: newImage.path,
+          image_url: newImage.url,
+        })
+        .eq('id', productId)
+        .eq('is_active', true)
+
+      if (product.image_path === null) {
+        updateQuery = updateQuery.is('image_path', null)
+      } else {
+        updateQuery = updateQuery.eq('image_path', product.image_path)
+      }
+
+      const { data: updatedProduct, error: updateError } = await updateQuery
+        .select('id, image_path, image_url')
+        .maybeSingle()
+
+      if (updateError || !updatedProduct) {
+        throw new Error('Kunde inte spara bildinformationen.')
+      }
+
+      // Databasen är uppdaterad. Nu kan vi ta bort den gamla bilden.
+      if (product.image_path) {
+        try {
+          await deleteProductImage(product.image_path)
+        } catch (error) {
+          // Den nya bilden fungerar ändå.
+          console.error('Could not delete old image:', error.message)
+        }
+      }
+
+      return res.json({
+        message: 'Bilden har laddats upp.',
+        product: updatedProduct,
+      })
+    } catch (error) {
+      console.error('Image upload failed:', error.message)
+
+      // Om databasen inte uppdaterades, städa bort den nya filen.
+      // Kontrollera först om den faktiskt hann kopplas till produkten.
+      if (newImage) {
+        const { data: currentProduct, error: checkError } = await supabase
+          .from('products')
+          .select('image_path')
+          .eq('id', productId)
+          .maybeSingle()
+
+        if (!checkError && currentProduct?.image_path !== newImage.path) {
+          try {
+            await deleteProductImage(newImage.path)
+          } catch (cleanupError) {
+            console.error('Image cleanup failed:', cleanupError.message)
+          }
+        }
+      }
+
+      return res.status(503).json({
+        error: 'Bilden kunde inte sparas. Försök igen.',
+      })
+    }
+  }
+)
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)

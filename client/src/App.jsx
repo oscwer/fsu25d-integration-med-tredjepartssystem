@@ -47,6 +47,9 @@ function App() {
   const [searchLoading, setSearchLoading] = useState(false)
   const [searchError, setSearchError] = useState('')
 
+  const [uploadingImageId, setUploadingImageId] = useState(null)
+  const [imageUploadError, setImageUploadError] = useState('')
+
   async function handleImport(format) {
     if (!adminKey.trim()) {
       setImportError('Ange adminnyckeln först.')
@@ -331,6 +334,63 @@ function App() {
     }
   }
 
+async function handleImageUpload(productId, file) {
+  if (!file) return
+
+  if (!adminKey.trim()) {
+    setImageUploadError('Ange adminnyckeln först.')
+    return
+  }
+
+  setUploadingImageId(productId)
+  setImageUploadError('')
+
+  const formData = new FormData()
+  formData.append('image', file)
+
+  try {
+    const response = await fetch(
+      `${API_URL}/api/products/${productId}/image`,
+      {
+        method: 'POST',
+        headers: {
+          'X-Admin-Key': adminKey,
+        },
+        body: formData,
+      }
+    )
+
+    const result = await response.json()
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Bilden kunde inte laddas upp.')
+    }
+
+    setProducts((currentProducts) =>
+      currentProducts.map((product) =>
+        product.id === productId
+          ? { ...product, ...result.product }
+          : product
+      )
+    )
+
+    // Uppdatera även eventuella aktiva sökresultat.
+    setSearchResults((currentResults) =>
+      currentResults === null
+        ? null
+        : currentResults.map((product) =>
+            product.id === productId
+              ? { ...product, ...result.product }
+              : product
+          )
+    )
+  } catch (error) {
+    setImageUploadError(error.message)
+  } finally {
+    setUploadingImageId(null)
+  }
+}
+
  function handleAddToCart(product) {
   setCart((currentCart) => {
     const existingItem = currentCart.find(
@@ -522,7 +582,16 @@ function App() {
               {(searchResults ?? products).map((product) => (
                 <article className="product-card" key={product.id}>
                   <div className="product-image-placeholder">
-                    <span>{product.name.charAt(0)}</span>
+                    {product.image_url ? (
+                      <img
+                        src={product.image_url}
+                        alt={product.name}
+                        loading="lazy"
+                        className="product-image"
+                      />
+                    ) : (
+                      <span>{product.name.charAt(0)}</span>
+                    )}
                   </div>
 
                   <div className="product-card-content">
@@ -855,7 +924,11 @@ function App() {
                 <h2>Products</h2>
                 <p>{products.length} products in the store.</p>
               </div>
-
+            {imageUploadError && (
+              <p className="form-error" role="alert">
+                {imageUploadError}
+              </p>
+            )}
               <div className="admin-product-list">
                 {products.map((product) => (
                   <div className="admin-product-row" key={product.id}>
@@ -878,6 +951,24 @@ function App() {
                     >
                       Arkivera
                     </button>
+
+                    <label className="secondary-button">
+                      {uploadingImageId === product.id
+                        ? 'Laddar upp...'
+                        : 'Ladda upp bild'}
+
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        disabled={uploadingImageId !== null}
+                        style={{ display: 'none' }}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0]
+                          handleImageUpload(product.id, file)
+                          event.target.value = ''
+                        }}
+                      />
+                    </label>
                   </div>
                 ))}
               </div>
