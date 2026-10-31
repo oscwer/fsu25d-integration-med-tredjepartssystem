@@ -23,6 +23,7 @@ const {
 } = require('./integrations/algoliaAdapter')
 
 const {
+  stripe,
   createCheckoutSession,
 } = require('./integrations/stripeAdapter')
 
@@ -104,6 +105,114 @@ const app = express()
 const PORT = 3000
 
 app.use(cors())
+
+app.post(
+  '/api/stripe/webhook',
+  express.raw({ type: 'application/json' }),
+  async (req, res) => {
+    const signature = req.headers['stripe-signature']
+
+    let event
+
+    try {
+      event = stripe.webhooks.constructEvent(
+        req.body,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET
+      )
+    } catch (error) {
+      console.error('Invalid Stripe webhook signature:', error.message)
+
+      return res.status(400).json({
+        error: 'Invalid webhook signature',
+      })
+    }
+
+    try {
+      console.log('Verified Stripe event:', event.type)
+
+      const paymentEvents = [
+        'checkout.session.completed',
+        'checkout.session.async_payment_succeeded',
+      ]
+
+      if (paymentEvents.includes(event.type)) {
+        const session = event.data.object
+
+        // En slutförd Checkout-session betyder inte alltid
+        // att betalningen faktiskt är bekräftad.
+        if (session.payment_status !== 'paid') {
+          console.log('Payment not yet confirmed:', session.id)
+          return res.json({ received: true })
+        }
+
+        // Hitta ordern via Stripe-sessionens ID.
+        const { data: order, error: orderError } = await supabase
+          .from('orders')
+          .select('id, status')
+          .eq('stripe_session_id', session.id)
+          .single()
+
+        if (orderError || !order) {
+          throw new Error(`Order not found for session ${session.id}`)
+        }
+
+        if (session.client_reference_id !== String(order.id)) {
+          throw new Error('Stripe session and order ID do not match')
+        }
+
+        // Databasen sköter status och lager atomärt.
+        const { data: result, error: paymentError } = await supabase.rpc(
+          'finalize_stripe_payment',
+          {
+            p_order_id: order.id,
+            p_session_id: session.id,
+          }
+        )
+
+        if (paymentError) {
+          throw new Error(paymentError.message)
+        }
+
+        console.log(`Order ${order.id}: ${result}`)
+      }
+
+      if (event.type === 'checkout.session.expired') {
+        const session = event.data.object
+
+        const { data: cancelledOrder, error } = await supabase
+          .from('orders')
+          .update({
+            status: 'cancelled',
+            cancelled_at: new Date().toISOString(),
+          })
+          .eq('stripe_session_id', session.id)
+          .eq('status', 'pending')
+          .select('id')
+          .maybeSingle()
+
+        if (error) {
+          throw new Error(error.message)
+        }
+
+        if (cancelledOrder) {
+          console.log(`Order ${cancelledOrder.id}: cancelled`)
+        } else {
+          console.log(`No pending order to cancel for ${session.id}`)
+        }
+      }
+
+      return res.status(200).json({ received: true })
+      } catch (error) {
+        console.error('Stripe webhook processing failed:', error.message)
+
+        return res.status(500).json({
+          error: 'Webhook processing failed',
+        })
+      }
+      }
+    )
+
 app.use(express.json())
 
 app.get('/api/health', (req, res) => {
@@ -595,6 +704,37 @@ app.post('/api/checkout', async (req, res) => {
       error: 'Could not validate checkout',
     })
   }
+})
+
+app.get('/api/orders/:id/status', async (req, res) => {
+  const { id } = req.params
+
+  if (!/^\d+$/.test(id)) {
+    return res.status(400).json({ error: 'Invalid order ID' })
+  }
+
+  const { data: order, error } = await supabase
+    .from('orders')
+    .select('id, status, stripe_session_id')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (error) {
+    return res.status(500).json({
+      error: 'Failed to fetch order status',
+    })
+  }
+
+  if (!order) {
+    return res.status(404).json({ error: 'Order not found' })
+  }
+
+  // Returnera inte kundens personuppgifter.
+  res.json({
+    id: order.id,
+    status: order.status,
+    stripeSessionId: order.stripe_session_id,
+  })
 })
 
 app.listen(PORT, () => {

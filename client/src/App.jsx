@@ -158,6 +158,43 @@ function App() {
     fetchExchangeRates()
   }, [])
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const orderId = params.get('order_id')
+    const sessionId = params.get('session_id')
+
+    if (!orderId || !sessionId) return
+
+    async function loadOrderStatus() {
+      try {
+        const response = await fetch(
+          `${API_URL}/api/orders/${orderId}/status`
+        )
+
+        if (!response.ok) {
+          throw new Error('Could not load order status')
+        }
+
+        const order = await response.json()
+
+        // Kontrollera att URL:en gäller rätt Stripe-session.
+        if (order.stripeSessionId !== sessionId) {
+          throw new Error('Stripe session does not match order')
+        }
+
+        setOrderConfirmation(order)
+
+        if (order.status === 'paid') {
+          setCart([])
+        }
+      } catch (error) {
+        setCheckoutError(error.message)
+      }
+    }
+
+    loadOrderStatus()
+  }, [])
+
   async function searchCatalog(page = 1) {
     setSearchLoading(true)
     setSearchError('')
@@ -320,38 +357,39 @@ function App() {
 
   async function handleCheckout(event) {
     event.preventDefault()
-
-    const response = await fetch(`${API_URL}/api/orders`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        customerName,
-        customerEmail,
-        items: cart.map((item) => ({
-          productId: item.id,
-          quantity: item.quantity,
-        })),
-      }),
-    })
-
-    const result = await response.json()
-
-    if (!response.ok) {
-      setCheckoutError(result.error || 'Failed to place order')
-      return
-    }
-
-    setOrderConfirmation(result)
-    setOrders((currentOrders) => [
-      result,
-      ...currentOrders,
-    ])
     setCheckoutError('')
-    setCart([])
-    setCustomerName('')
-    setCustomerEmail('')
+
+    try {
+      const response = await fetch(`${API_URL}/api/checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customerName,
+          customerEmail,
+          items: cart.map((item) => ({
+            productId: item.id,
+            quantity: item.quantity,
+          })),
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Could not start checkout')
+      }
+
+      if (!result.checkoutUrl) {
+        throw new Error('Missing Stripe checkout URL')
+      }
+
+      // Skicka kunden till Stripes betalningssida.
+      window.location.assign(result.checkoutUrl)
+    } catch (error) {
+      setCheckoutError(error.message)
+    }
   }
 
   return (
@@ -615,7 +653,7 @@ function App() {
                     )}
 
                     <button className="checkout-button" type="submit">
-                      Place order
+                      Continue to payment
                     </button>
                   </form>
                 </>
@@ -626,15 +664,37 @@ function App() {
         {orderConfirmation && (
           <section className="order-confirmation">
             <div className="confirmation-icon" aria-hidden="true">
-              ✓
+              {orderConfirmation.status === 'paid' ? '✓' : 'ℹ'}
             </div>
 
             <div>
-              <p className="eyebrow">Order complete</p>
-              <h2>Thanks for your order.</h2>
-              <p>
-                Order #{orderConfirmation.id} has been placed successfully.
-              </p>
+              <p className="eyebrow">Payment status</p>
+
+              {orderConfirmation.status === 'paid' ? (
+                <>
+                  <h2>Thank you for your order!</h2>
+                  <p>
+                    Order #{orderConfirmation.id} has been paid successfully.
+                  </p>
+                </>
+              ) : orderConfirmation.status === 'pending' ? (
+                <>
+                  <h2>Payment is being processed</h2>
+                  <p>
+                    Order #{orderConfirmation.id} is awaiting payment confirmation.
+                  </p>
+                  <button type="button" onClick={() => window.location.reload()}>
+                    Check payment status again
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h2>Payment not completed</h2>
+                  <p>
+                    Order #{orderConfirmation.id} was cancelled.
+                  </p>
+                </>
+              )}
             </div>
           </section>
         )}
