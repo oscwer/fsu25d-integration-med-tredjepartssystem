@@ -13,7 +13,12 @@ async function testStripeConnection() {
   return stripe.balance.retrieve()
 }
 
-async function createCheckoutSession(orderId, items, customerEmail) {
+async function createCheckoutSession(
+  orderId,
+  items,
+  customerEmail,
+  shippingCost
+) {
   const lineItems = items.map((item) => ({
     price_data: {
       currency: 'sek',
@@ -24,6 +29,23 @@ async function createCheckoutSession(orderId, items, customerEmail) {
     },
     quantity: item.quantity,
   }))
+
+  if (!Number.isFinite(shippingCost) || shippingCost < 0) {
+  throw new Error('Invalid shipping cost')
+}
+
+if (shippingCost > 0) {
+  lineItems.push({
+    price_data: {
+      currency: 'sek',
+      product_data: {
+        name: 'Frakt',
+      },
+      unit_amount: Math.round(shippingCost * 100),
+    },
+    quantity: 1,
+  })
+}
 
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',

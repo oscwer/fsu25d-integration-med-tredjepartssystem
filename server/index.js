@@ -138,13 +138,38 @@ async function syncProductToAlgolia(product) {
 const checkoutSchema = z.object({
   customerName: z.string().trim().min(1),
   customerEmail: z.email(),
+
   items: z.array(
     z.object({
       productId: z.number().int().positive(),
       quantity: z.number().int().min(1),
     })
   ).min(1),
+
+  deliveryMethod: z.enum(['service_point', 'home_delivery']),
+
+  postalCode: z.string()
+    .transform((value) => value.replace(/\s/g, ''))
+    .pipe(z.string().regex(/^\d{5}$/)),
+
+  servicePointId: z.string().min(1).optional(),
+}).superRefine((data, ctx) => {
+  if (data.deliveryMethod === 'service_point' && !data.servicePointId) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['servicePointId'],
+      message: 'Välj ett utlämningsställe.',
+    })
+  }
 })
+
+const {
+  getNearestServicePoints,
+} = require('./integrations/postNordAdapter')
+
+const {
+  calculateShipping,
+} = require('./services/shippingService')
 
 const app = express()
 const PORT = 3000
@@ -412,81 +437,9 @@ app.delete('/api/products/:id', requireImportAdmin, async (req, res) => {
   })
 })
 
-app.post('/api/orders', async (req, res) => {
-  const { customerName, customerEmail, items } = req.body
-
-  if (!customerName || !customerEmail || !items?.length) {
-    return res.status(400).json({
-      error: 'Customer name, email and cart items are required',
-    })
-  }
-
-  const productIds = items.map((item) => item.productId)
-
-  const { data: products, error: productsError } = await supabase
-    .from('products')
-    .select('id, name, price')
-    .in('id', productIds)
-
-  if (productsError) {
-    console.error('Database error:', productsError)
-    return res.status(500).json({
-      error: 'Failed to fetch products',
-    })
-  }
-
-  const { data: order, error: orderError } = await supabase
-    .from('orders')
-    .insert({
-      customer_name: customerName,
-      customer_email: customerEmail,
-    })
-    .select()
-    .single()
-
-  if (orderError) {
-    console.error('Database error:', orderError)
-    return res.status(500).json({
-      error: 'Failed to create order',
-    })
-  }
-
-  const orderItems = items.map((item) => {
-    const product = products.find(
-      (product) => product.id === item.productId
-    )
-
-    return {
-      order_id: order.id,
-      product_id: product.id,
-      product_name: product.name,
-      unit_price: product.price,
-      quantity: item.quantity,
-    }
-  })
-
-  const { data: createdItems, error: itemsError } = await supabase
-    .from('order_items')
-    .insert(orderItems)
-    .select()
-
-  if (itemsError) {
-    console.error('Database error:', itemsError)
-    return res.status(500).json({
-      error: 'Failed to create order items',
-    })
-  }
-
-  const total = createdItems.reduce(
-    (sum, item) =>
-      sum + Number(item.unit_price) * item.quantity,
-    0
-  )
-
-  res.status(201).json({
-    ...order,
-    items: createdItems,
-    total,
+app.post('/api/orders', (req, res) => {
+  res.status(410).json({
+    error: 'This endpoint has been replaced by /api/checkout',
   })
 })
 
@@ -599,7 +552,14 @@ app.post('/api/checkout', async (req, res) => {
   }
 
   try {
-    const { customerName, customerEmail, items } = parsed.data
+    const {
+      customerName,
+      customerEmail,
+      items,
+      deliveryMethod,
+      postalCode,
+      servicePointId,
+    } = parsed.data
 
     // Samla antal per produkt-ID.
     const quantities = new Map()
@@ -648,6 +608,37 @@ app.post('/api/checkout', async (req, res) => {
       0
     )
 
+    // Validera valt utlämningsställe mot PostNord.
+    let selectedServicePoint = null
+
+    if (deliveryMethod === 'service_point') {
+      let servicePoints
+
+      try {
+        servicePoints = await getNearestServicePoints(postalCode)
+      } catch (error) {
+        console.error('PostNord checkout error:', error.message)
+
+        return res.status(503).json({
+          error: 'Kunde inte verifiera utlämningsstället just nu.',
+        })
+      }
+
+      selectedServicePoint = servicePoints.find(
+        (point) => point.id === servicePointId
+      )
+
+      if (!selectedServicePoint) {
+        return res.status(400).json({
+          error: 'Det valda utlämningsstället är ogiltigt.',
+        })
+      }
+    }
+
+    // Fraktpriset beräknas på servern.
+    const shippingCost = calculateShipping(total, deliveryMethod)
+    const grandTotal = total + shippingCost
+
     // 1. Skapa en order med status pending
     const { data: order, error: orderError } = await supabase
       .from('orders')
@@ -655,6 +646,11 @@ app.post('/api/checkout', async (req, res) => {
         customer_name: customerName,
         customer_email: customerEmail,
         status: 'pending',
+        delivery_method: deliveryMethod,
+        delivery_postal_code: postalCode,
+        service_point_id: selectedServicePoint?.id ?? null,
+        service_point_name: selectedServicePoint?.name ?? null,
+        shipping_cost: shippingCost,
       })
       .select()
       .single()
@@ -693,11 +689,20 @@ app.post('/api/checkout', async (req, res) => {
     // 3. Skapa Stripe Checkout-sessionen
     let checkout
 
+    console.log('Shipping debug:', {
+      total,
+      deliveryMethod,
+      shippingCost,
+      grandTotal,
+      shippingCostType: typeof shippingCost,
+    })
+
     try {
       checkout = await createCheckoutSession(
         order.id,
         orderItems,
-        customerEmail
+        customerEmail,
+        shippingCost
       )
     } catch (error) {
       // Ingen fungerande betalningssession skapades
@@ -738,7 +743,9 @@ app.post('/api/checkout', async (req, res) => {
     res.status(201).json({
       orderId: order.id,
       checkoutUrl: checkout.checkoutUrl,
-      total,
+      subtotal: total,
+      shippingCost,
+      total: grandTotal,
       currency: 'SEK',
       status: 'pending',
     })
@@ -906,6 +913,32 @@ app.post(
     }
   }
 )
+
+app.get('/api/shipping/service-points', async (req, res) => {
+  const postalCode = String(req.query.postalCode ?? '')
+    .replace(/\s/g, '')
+
+  if (!/^\d{5}$/.test(postalCode)) {
+    return res.status(400).json({
+      error: 'Ange ett giltigt svenskt postnummer med fem siffror.',
+    })
+  }
+
+  try {
+    const servicePoints = await getNearestServicePoints(postalCode)
+
+    res.json({
+      postalCode,
+      servicePoints,
+    })
+  } catch (error) {
+    console.error('PostNord service points failed:', error.message)
+
+    res.status(503).json({
+      error: 'Kunde inte hämta utlämningsställen från PostNord.',
+    })
+  }
+})
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)

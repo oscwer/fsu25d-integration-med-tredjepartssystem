@@ -50,6 +50,12 @@ function App() {
   const [uploadingImageId, setUploadingImageId] = useState(null)
   const [imageUploadError, setImageUploadError] = useState('')
 
+  const [postalCode, setPostalCode] = useState('')
+  const [servicePoints, setServicePoints] = useState([])
+  const [servicePointId, setServicePointId] = useState('')
+  const [shippingLoading, setShippingLoading] = useState(false)
+  const [shippingError, setShippingError] = useState('')
+
   async function handleImport(format) {
     if (!adminKey.trim()) {
       setImportError('Ange adminnyckeln först.')
@@ -415,8 +421,37 @@ async function handleImageUpload(productId, file) {
   })
 }
 
+  async function handleFindServicePoints() {
+    setShippingLoading(true)
+    setShippingError('')
+    setServicePoints([])
+    setServicePointId('')
+
+    try {
+      const response = await fetch(
+        `${API_URL}/api/shipping/service-points?postalCode=${encodeURIComponent(postalCode)}`
+      )
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Kunde inte hämta ombud.')
+      }
+
+      setServicePoints(result.servicePoints)
+    } catch (error) {
+      setShippingError(error.message)
+    } finally {
+      setShippingLoading(false)
+    }
+  }
+
   async function handleCheckout(event) {
     event.preventDefault()
+    if (!servicePointId) {
+      setCheckoutError('Välj ett PostNord-ombud först.')
+      return
+    }
     setCheckoutError('')
 
     try {
@@ -425,14 +460,17 @@ async function handleImageUpload(productId, file) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          customerName,
-          customerEmail,
-          items: cart.map((item) => ({
-            productId: item.id,
-            quantity: item.quantity,
-          })),
-        }),
+       body: JSON.stringify({
+        customerName,
+        customerEmail,
+        items: cart.map((item) => ({
+          productId: item.id,
+          quantity: item.quantity,
+        })),
+        deliveryMethod: 'service_point',
+        postalCode,
+        servicePointId,
+      }),
       })
 
       const result = await response.json()
@@ -716,6 +754,59 @@ async function handleImageUpload(productId, file) {
                         onChange={(event) => setCustomerEmail(event.target.value)}
                       />
                     </div>
+
+                    <div className="form-field">
+                      <label htmlFor="postalCode">Postnummer</label>
+                      <input
+                        id="postalCode"
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="11122"
+                        value={postalCode}
+                        onChange={(event) => {
+                          setPostalCode(event.target.value)
+                          setServicePoints([])
+                          setServicePointId('')
+                        }}
+                        required
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={handleFindServicePoints}
+                      disabled={shippingLoading}
+                    >
+                      {shippingLoading ? 'Hämtar ombud...' : 'Hitta PostNord-ombud'}
+                    </button>
+
+                    {shippingError && (
+                      <p className="form-error" role="alert">
+                        {shippingError}
+                      </p>
+                    )}
+
+                    {servicePoints.length > 0 && (
+                      <div className="form-field">
+                        <label htmlFor="servicePoint">Välj utlämningsställe</label>
+
+                        <select
+                          id="servicePoint"
+                          value={servicePointId}
+                          onChange={(event) => setServicePointId(event.target.value)}
+                          required
+                        >
+                          <option value="">Välj ombud...</option>
+
+                          {servicePoints.map((point) => (
+                            <option key={point.id} value={point.id}>
+                              {point.name} – {point.address}, {point.city}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     {checkoutError && (
                       <p className="form-error">{checkoutError}</p>
