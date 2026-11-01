@@ -137,15 +137,7 @@ function App() {
         setProducts(data)
      })
   }, [])
-
-  useEffect(() => {
-    fetch(`${API_URL}/api/orders`)
-      .then((response) => response.json())
-      .then((data) => {
-        setOrders(data)
-      })
-  }, [])
-
+  
   useEffect(() => {
     async function fetchExchangeRates() {
       try {

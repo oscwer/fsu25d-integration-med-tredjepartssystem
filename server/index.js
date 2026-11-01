@@ -443,7 +443,7 @@ app.post('/api/orders', (req, res) => {
   })
 })
 
-app.get('/api/orders', async (req, res) => {
+app.get('/api/orders', requireImportAdmin, async (req, res) => {
   const { data: orders, error: ordersError } = await supabase
     .from('orders')
     .select('*')
