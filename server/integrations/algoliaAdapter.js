@@ -25,6 +25,16 @@ function mapProductToSearchObject(product) {
   }
 }
 
+function mapSearchHitToProduct(hit) {
+  return {
+    id: hit.id,
+    article_number: hit.article_number,
+    name: hit.name,
+    description: hit.description,
+    price: Number(hit.price),
+  }
+}
+
 async function indexProducts(products) {
   const objects = products.map(mapProductToSearchObject)
 
@@ -73,7 +83,7 @@ async function searchProducts(query, page, pageSize) {
   })
 
   return {
-    products: result.hits,
+    products: result.hits.map(mapSearchHitToProduct),
     total: result.nbHits,
     totalPages: result.nbPages,
     page,
