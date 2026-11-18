@@ -55,6 +55,8 @@ function App() {
   const [servicePointId, setServicePointId] = useState('')
   const [shippingLoading, setShippingLoading] = useState(false)
   const [shippingError, setShippingError] = useState('')
+  const [transitTime, setTransitTime] = useState(null)
+  const [transitTimeError, setTransitTimeError] = useState('')
 
   async function handleImport(format) {
     if (!adminKey.trim()) {
@@ -418,6 +420,8 @@ async function handleImageUpload(productId, file) {
     setShippingError('')
     setServicePoints([])
     setServicePointId('')
+    setTransitTime(null)
+    setTransitTimeError('')
 
     try {
       const response = await fetch(
@@ -431,6 +435,20 @@ async function handleImageUpload(productId, file) {
       }
 
       setServicePoints(result.servicePoints)
+      try {
+        const transitResponse = await fetch(
+          `${API_URL}/api/shipping/transit-time?postalCode=${encodeURIComponent(postalCode)}`
+        )
+
+        if (!transitResponse.ok) {
+          throw new Error('Kunde inte hämta leveransprognos.')
+        }
+
+        const transitResult = await transitResponse.json()
+        setTransitTime(transitResult)
+      } catch (error) {
+        setTransitTimeError(error.message)
+      }
     } catch (error) {
       setShippingError(error.message)
     } finally {
@@ -759,6 +777,8 @@ async function handleImageUpload(productId, file) {
                           setPostalCode(event.target.value)
                           setServicePoints([])
                           setServicePointId('')
+                          setTransitTime(null)
+                          setTransitTimeError('')
                         }}
                         required
                       />
@@ -798,6 +818,30 @@ async function handleImageUpload(productId, file) {
                           ))}
                         </select>
                       </div>
+                    )}
+
+                    {transitTime && (
+                      <p className="delivery-estimate">
+                        Preliminär leverans till ditt postnummer:{' '}
+                        <strong>
+                          {new Date(
+                            `${transitTime.estimatedDelivery.slice(0, 10)}T12:00:00`
+                          ).toLocaleDateString('sv-SE', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                          })}
+                        </strong>
+                        . Prognosen gäller postnummerområdet och är inte
+                        en garanti för valt ombud.
+                      </p>
+                    )}
+
+                    {transitTimeError && (
+                      <p className="form-error" role="status">
+                        Leveransprognosen är tillfälligt otillgänglig.
+                        Du kan fortfarande välja ombud.
+                      </p>
                     )}
 
                     {checkoutError && (

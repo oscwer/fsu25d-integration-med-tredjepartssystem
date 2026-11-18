@@ -165,6 +165,7 @@ const checkoutSchema = z.object({
 
 const {
   getNearestServicePoints,
+  getTransitTime,
 } = require('./integrations/postNordAdapter')
 
 const {
@@ -936,6 +937,32 @@ app.get('/api/shipping/service-points', async (req, res) => {
 
     res.status(503).json({
       error: 'Kunde inte hämta utlämningsställen från PostNord.',
+    })
+  }
+})
+
+app.get('/api/shipping/transit-time', async (req, res) => {
+  const postalCode = String(req.query.postalCode ?? '')
+    .replace(/\s/g, '')
+
+  if (!/^\d{5}$/.test(postalCode)) {
+    return res.status(400).json({
+      error: 'Ange ett giltigt svenskt postnummer.',
+    })
+  }
+
+  try {
+    const transitTime = await getTransitTime(postalCode)
+
+    res.json({
+      postalCode,
+      ...transitTime,
+    })
+  } catch (error) {
+    console.error('PostNord Transit Time failed:', error.message)
+
+    res.status(503).json({
+      error: 'Kunde inte hämta beräknad leveranstid.',
     })
   }
 })
