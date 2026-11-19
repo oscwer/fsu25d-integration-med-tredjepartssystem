@@ -147,53 +147,207 @@ The admin key approach is a simplified educational solution and is not a substit
 - The admin interface and authorization model require further development before real-world use.
 - The application is a demonstration project and is not intended for live commercial transactions.
 
-## Reflection
-
 # Reflektion – Integration med tredjepartssystem
 
-## Arkitektur och integrationer
+## 1. Integrationsmodeller och varför de passar
 
-I den här uppgiften har jag vidareutvecklat en e-handelsapplikation som jag byggde under en tidigare kurs. Applikationen består av en frontend i React, en backend med Node.js och Express samt en PostgreSQL-databas via Supabase. Målet har varit att integrera externa tjänster för att göra applikationen mer lik en verklig e-handel.
+I uppgiften har jag integrerat flera externa tjänster med olika integrationsmodeller.
 
-Jag har arbetat med flera olika typer av integrationer: valutaomräkning med Frankfurter, produktimport via CSV och XML, produktsökning med Algolia, betalningar via Stripe, bildlagring i Supabase Storage och fraktombud via PostNord.
+Frankfurter, Algolia och PostNord använder REST-API:er, där min Express-backend skickar HTTP-anrop och tar emot JSON-data. Det passar bra när applikationen behöver hämta information på begäran, exempelvis valutakurser, sökresultat, utlämningsställen och beräknade leveranstider.
 
-En viktig princip har varit att låta frontend kommunicera med min egen backend, som i sin tur hanterar externa API-anrop. Det gör att hemliga API-nycklar kan hållas på serversidan och att data kan valideras och bearbetas innan den skickas vidare till frontend.
+Produktimporten använder CSV och XML. Dessa filformat passar när större mängder strukturerad produktinformation ska överföras mellan system. Backend hämtar, tolkar och validerar informationen innan produkterna sparas i Supabase.
 
-## Tekniska utmaningar och lärdomar
+För Stripe använder jag deras Node.js-SDK, en redirect till Stripe Checkout och webhooks. Kunden genomför betalningen hos Stripe, medan webhooken används för att bekräfta resultatet på serversidan. Supabase Storage använder ett SDK för uppladdning och hantering av produktbilder.
 
-En av de största utmaningarna har varit att förstå hur information rör sig mellan olika system. När användaren exempelvis väljer ett PostNord-ombud behöver frontend skicka valet till backend, som kontrollerar att ombudet finns, räknar ut fraktkostnaden och skickar rätt totalsumma vidare till Stripe.
+Jag har lärt mig att olika integrationsmodeller passar olika behov. En betalning kräver exempelvis en annan nivå av tillförlitlighet än ett anrop för att visa en valutakurs.
 
-Jag har fått en bättre förståelse för asynkron JavaScript, framför allt `async/await`, och varför man behöver hantera fel när man är beroende av externa tjänster. Jag har också arbetat med validering med hjälp av Zod och börjat förstå fördelarna med att separera API-integrationer i egna adapterfiler.
+## 2. Varför integrationerna går via Express
 
-En annan lärdom är att man inte kan utgå från att externa API:er alltid fungerar som förväntat. PostNords tjänst för att hämta utlämningsställen fungerade, men jag lyckades inte få deras Transit Time API att fungera. Trots att jag testade olika adresser fick jag felmeddelanden, bland annat HTTP 403. Jag valde därför att inte presentera någon uppskattad leveranstid som jag inte kunde verifiera.
+Jag har valt att låta React kommunicera med min Express-backend, som sedan anropar de externa tjänsterna.
 
-## Betalningar, säkerhet och tillförlitlighet
+En viktig anledning är säkerheten. Hemliga API-nycklar ska inte finnas i frontend, eftersom JavaScript-koden körs i användarens webbläsare.
 
-Stripe-integrationen var en av de mer lärorika delarna. Från början var det lätt att tänka att en betalning var klar när kunden återvände till webbshoppen. Jag har nu förstått att frontend inte är en tillförlitlig källa för att avgöra om betalningen faktiskt lyckats.
+Backend gör det också möjligt att validera inkommande data, hantera fel och omvandla externa API-svar till ett format som passar min egen applikation. Ett exempel är Algolia, där sökträffarna normaliseras så att React inte behöver hantera leverantörsspecifika fält som `objectID` och `_highlightResult`.
 
-I stället använder applikationen en signerad webhook från Stripe. När Stripe bekräftar betalningen uppdateras orderns status och produktens lagersaldo i databasen. Jag har även använt en databasfunktion för att undvika att en order behandlas flera gånger om samma händelse skickas igen.
+Vid checkout hämtas produktpriser från databasen och fraktkostnaden beräknas på serversidan. Därmed behöver backend inte lita på priser som skickas från webbläsaren.
 
-Under testningen uppstod ett konkret exempel på varför detta är viktigt: en betalning genomfördes hos Stripe, men ordern låg kvar som `pending` i Supabase. Genom att kontrollera betalningsstatusen direkt hos Stripe och undersöka webhookflödet kunde jag identifiera problemet och återställa ordern utan att genomföra en ny betalning.
+## 3. Varför använda externa tjänster i stället för att bygga egna?
 
-## Användning av AI
+Den största fördelen är att jag kan använda funktionalitet som redan utvecklats och underhålls av specialiserade leverantörer.
 
-Jag har använt ChatGPT som en handledare under arbetets gång. Framför allt har AI hjälpt mig att förstå nya koncept och tolka API-dokumentation.
+Att bygga en egen betaltjänst motsvarande Stripe skulle exempelvis kräva omfattande arbete med betalningssäkerhet, transaktioner, regelverk och kommunikation med betalningsleverantörer.
 
-Arbetssättet har ofta varit att först diskutera hur en integration bör fungera och varför en viss lösning är lämplig. Därefter har jag implementerat och testat lösningen i min egen utvecklingsmiljö, analyserat resultatet och vid behov fortsatt felsökningen.
+En egen sökmotor skulle behöva hantera indexering, stavfel, relevans och prestanda. Att bygga motsvarande PostNord-integration utan deras API skulle dessutom kräva tillgång till aktuella uppgifter om ombud, transporter och leveranstider.
 
-AI har också hjälpt mig med kodexempel och förslag på implementationer, men en viktig del av lärandet har varit att förstå vad koden gör och kunna koppla den till applikationens övriga delar. Exempelvis har vi gått igenom varför Stripe kräver webhookhantering och hur validering av inkommande data kan förhindra felaktiga ordrar.
+Genom att använda externa tjänster kan jag fokusera på själva e-handelsapplikationen. Nackdelen är att jag blir beroende av leverantörernas API:er och tillgänglighet.
 
-En begränsning som blivit tydlig är att AI-genererade förslag inte alltid är korrekta eller direkt användbara. Det märktes bland annat vid arbetet med PostNords API, där flera föreslagna anrop inte fungerade som förväntat. Jag har därför behövt verifiera förslagen genom dokumentation, egna tester och felsökning.
+## 4. Vad händer om tjänsterna inte fungerar?
 
-Sammantaget har AI varit ett värdefullt stöd för mitt lärande, men jag är samtidigt medveten om vikten av att fortsätta utveckla min självständiga problemlösningsförmåga och mina grundläggande programmeringskunskaper.
+Olika avbrott påverkar shoppen på olika sätt.
 
-## Slutsats och förbättringar
+Om Frankfurter inte är tillgängligt kan valutakurser inte uppdateras. Shoppen har fortfarande produktpriser i SEK, men valutavisningen kan behöva falla tillbaka på dessa.
 
-Den viktigaste lärdomen från uppgiften är att en integration handlar om mer än att få ett API-anrop att returnera data. Man måste också tänka på validering, säkerhet, felhantering och vad som händer när olika system inte är överens.
+Om leverantörens CSV- eller XML-tjänst är nere misslyckas importen, men befintliga produkter finns kvar i databasen.
 
-Applikationen har fortfarande begränsningar. Exempelvis behöver adminautentiseringen vidareutvecklas, hemleverans kompletteras med adresshantering och betalningsflödet bli bättre på att hantera fördröjda webhookhändelser i användargränssnittet.
+Om Algolia inte svarar kan sökfunktionen inte visa nya resultat. Backend returnerar ett fel och frontend visar ett felmeddelande, medan den vanliga produktlistan fortfarande kan användas.
 
-Jag har fått en betydligt bättre förståelse för hur externa tjänster kan kopplas ihop i en fullstackapplikation, även om jag fortfarande behöver mer praktisk erfarenhet för att kunna bygga liknande lösningar helt självständigt.
+Om Stripe inte fungerar kan kunden inte starta eller slutföra betalningen. Ordern ska inte markeras som betald enbart för att kunden återvänder till shoppen. Under testningen upptäckte jag en betalning som var genomförd hos Stripe men fortfarande markerad som `pending` i databasen. Det visade varför signerade webhooks, loggning och idempotent orderhantering är viktiga.
+
+Om Supabase Storage inte fungerar misslyckas bilduppladdningen, men befintliga produktuppgifter finns kvar. Om PostNord inte kan hämta utlämningsställen kan kunden däremot inte välja ett verifierat ombud och därmed inte genomföra den aktuella checkouten. Om endast leveranstidsprognosen misslyckas kan kunden fortfarande välja ombud och fortsätta betalningen.
+
+## 5. Risker med externa beroenden
+
+En risk är att leverantörer ändrar sina API:er, priser eller användarvillkor. Under arbetet med PostNord fick jag erfara hur viktigt det är att använda korrekt API-version och verifiera anrop mot dokumentationen.
+
+En annan risk gäller personuppgifter. Vid betalning och leverans kan information om kunder behöva skickas till externa tjänster. Det ställer krav på att endast nödvändiga uppgifter delas, att API-nycklar skyddas och att personuppgiftshanteringen följer tillämpliga regler, exempelvis GDPR.
+
+För att minska beroendet har jag separerat flera integrationer i adapterfiler. Det gör det lättare att ändra eller ersätta en leverantör utan att behöva skriva om hela applikationen.
+
+## Sammanfattning
+
+Den viktigaste lärdomen är att en integration inte bara handlar om att få ett API-anrop att fungera. Det handlar också om att välja rätt integrationsmodell, kontrollera data, skydda information och planera för att externa tjänster ibland misslyckas. Jag har fått en bättre förståelse för detta genom att implementera och felsöka integrationerna i en fungerande fullstackapplikation.
+
+
+
+# AI-redovisning – Labb 5: PostNord
+
+## Hur jag använde AI
+
+Under Labb 5 använde jag ChatGPT som teknisk handledare för att förstå PostNords API:er, planera integrationen, felsöka och kontrollera implementationen.
+
+Nedan beskriver jag arbetsprocessen steg för steg. Promptarna är sammanfattningar av våra diskussioner, inte nödvändigtvis ordagranna formuleringar.
+
+### 1. Planera fraktintegrationen
+
+**Exempel på prompt:**
+
+*Hur kan jag integrera PostNord i min befintliga e-handelsapplikation med React, Express och Supabase? Jag behöver hitta närliggande ombud, beräkna frakt och visa leveranstid.*
+
+**AI:s förslag:**
+
+ChatGPT föreslog att kommunikationen med PostNord skulle hanteras i en separat adapter i Express-backenden. React skulle anropa mina egna endpoints i stället för PostNord direkt.
+
+AI föreslog också att fraktpriserna skulle beräknas på serversidan och att valt ombud skulle verifieras innan ordern skapades.
+
+**Min implementation och verifiering:**
+
+Jag skapade en PostNord-adapter och en separat tjänst för fraktberäkningen. Jag testade API-anropen från terminalen innan de kopplades till React.
+
+### 2. Hämta närliggande utlämningsställen
+
+**Exempel på prompt:**
+
+*Hur använder jag PostNords Service Points API för att hitta fem utlämningsställen utifrån ett svenskt postnummer?*
+
+**AI:s förslag:**
+
+ChatGPT föreslog att använda PostNords API för ombudssökning och att validera svaret innan det skickades vidare till frontend.
+
+**Min implementation och verifiering:**
+
+Jag använde endpointen:
+
+`/rest/businesslocation/v5/servicepoints/nearest/byaddress`
+
+Jag testade bland annat postnummer `11122` och fick fem utlämningsställen tillbaka.
+
+Med hjälp av Zod validerade jag API-svaret och omvandlade det till ett enklare format med ombudets ID, namn och adress.
+
+React visar därefter ombuden i en lista där kunden kan välja utlämningsställe.
+
+### 3. Beräkna och verifiera fraktkostnaden
+
+**Exempel på prompt:**
+
+*Hur kan jag lägga till två fraktalternativ och säkerställa att kunden inte kan manipulera fraktkostnaden från React?*
+
+**AI:s förslag:**
+
+AI föreslog att fraktberäkningen skulle ligga i backend och att produktpriser och fraktkostnader skulle summeras innan betalningen skickades till Stripe.
+
+**Min implementation och verifiering:**
+
+Jag skapade en separat funktion för fraktkostnader: 59 kr för ombudsleverans och 99 kr för hemleverans, med fri frakt från 500 kr.
+
+Jag kontrollerade också att kundens valda ombuds-ID faktiskt fanns bland de ombud PostNord returnerade.
+
+Vid ett test med varor för 179 kr blev totalsumman 238 kr inklusive frakt. Jag verifierade sedan att Stripe Checkout tog emot rätt belopp.
+
+Hemleverans finns i backendens beräkningsmodell men är inte fullt implementerad i checkoutgränssnittet eftersom adresshantering saknas.
+
+### 4. Försöka hämta beräknad leveranstid
+
+**Exempel på prompt:**
+
+*Hur hämtar jag en beräknad leveranstid från PostNords Transit Time API i sandboxmiljön?*
+
+**AI:s första förslag:**
+
+ChatGPT föreslog olika API-sökvägar för Transit Time, bland annat varianter med `/transittime/addresstoaddress`.
+
+**Problem och avvikelse från dokumentationen:**
+
+Vissa anrop gav HTTP 404 och andra HTTP 403, bland annat med felmeddelandet `API001 Please provide a valid request`.
+
+Vi hade inte identifierat rätt version och fullständig sökväg. Jag valde därför inledningsvis att inte visa någon leveranstid som inte gick att verifiera.
+
+**Hur problemet löstes:**
+
+I återkopplingen på examinationen fick jag den korrekta Transit Time V2-endpointen:
+
+`/rest/transport/v2/transittime/addresstoaddress`
+
+Jag testade den mot `https://atapi2.postnord.com` med min sandboxnyckel och tjänstekod `19` för ombudsleverans.
+
+Anropet gav HTTP 200 och innehöll bland annat `estimatedTimeOfArrival.timeOfArrival`.
+
+Detta visade att AI:s tidigare förslag på sökvägar inte var tillräckligt tillförlitliga. Lösningen var att jämföra mot rätt API-version och verifiera anropet praktiskt.
+
+### 5. Tolka Transit Time-svaret
+
+**Exempel på prompt:**
+
+*PostNord returnerar flera olika leveransalternativ i en array. Hur väljer jag rätt alternativ för vanlig ombudsleverans?*
+
+**AI:s förslag:**
+
+ChatGPT föreslog att filtrera på tjänstekod `19`, kontrollera att alternativet är tillgängligt och utesluta tilläggstjänster som Parcel Locker (`H1`) och SameDay (`F1`).
+
+**Min implementation och verifiering:**
+
+Jag kompletterade PostNord-adaptern med `getTransitTime()` och Zod-validering.
+
+Jag testade att API:t accepterade enbart mottagarens postnummer, exempelvis `11122`, och att det returnerade ett beräknat leveransdatum utan att jag behövde ange någon påhittad gatuadress.
+
+Jag införde också en förenklad regel om att paket lämnas över till PostNord nästa vardag kl. 12:00, i stället för att använda ett fast datum.
+
+### 6. Visa leveransprognosen i React
+
+**Exempel på prompt:**
+
+*Hur visar jag leveransdatumet i React-kassan utan att blockera köpet om PostNords Transit Time API inte fungerar?*
+
+**AI:s förslag:**
+
+AI föreslog ett separat React-state för leveransprognosen och ett API-anrop efter att ombuden hade hämtats. Prognosen skulle visas som preliminär och inte som ett garanterat leveransdatum.
+
+**Problem och felsökning:**
+
+När jag först testade implementationen visades ombuden men ingen leveransprognos.
+
+Med hjälp av webbläsarens Network-flik kunde jag verifiera att API-anropet fick HTTP 200 och innehöll ett giltigt `estimatedDelivery`.
+
+Felet låg därför inte i PostNord eller Express, utan i React. Vid en kontroll av `App.jsx` upptäckte vi att JSX-blocket som skulle visa prognosen saknades.
+
+Efter att jag lagt till det visades leveransdatumet korrekt i kassan.
+
+## Slutsats
+
+AI var framför allt användbart för att dela upp integrationen i mindre steg, förklara nya koncept och föreslå felsökningsmetoder.
+
+Samtidigt visade arbetet med Transit Time API:t att AI-förslag inte bör betraktas som verifierad dokumentation. Flera föreslagna API-sökvägar fungerade inte, och lösningen krävde att jag testade anropen mot PostNords faktiska sandboxmiljö.
+
+Min viktigaste lärdom är därför att kombinera AI-stöd med officiell dokumentation, konkreta API-tester och egen kontroll av svar och felmeddelanden.
 
 ## About
 
