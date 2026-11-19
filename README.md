@@ -141,7 +141,10 @@ The admin key approach is a simplified educational solution and is not a substit
 
 ## Known limitations
 
-- PostNord's Transit Time API could not be accessed successfully during development, so estimated delivery dates are not displayed.
+- PostNord Transit Time V2 provides estimated delivery dates.
+  Estimates are based on an assumed dispatch time of 12:00
+  on the next weekday and apply to the destination postal code,
+  not necessarily the exact selected service point.
 - Service point delivery is implemented in the checkout UI. Full home delivery requires additional address collection and validation.
 - The payment confirmation page does not automatically poll for delayed webhook updates.
 - The admin interface and authorization model require further development before real-world use.
