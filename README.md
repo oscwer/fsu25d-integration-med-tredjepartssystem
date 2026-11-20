@@ -6,7 +6,7 @@ Originally developed for a system development assignment, the application has be
 
 ## Live demo
 
-- **Frontend:** https://fsu25d-integration-med-tredjepartssystem-2ain-h8yjuxzal.vercel.app/
+- **Frontend:** https://fsu25d-integration-med-tredjepartss-omega.vercel.app/
 - **Backend health check:** https://fsu25d-integration-med-tredjepartss.vercel.app/api/health
 - **GitHub:** https://github.com/oscwer/fsu25d-integration-med-tredjepartssystem
 
