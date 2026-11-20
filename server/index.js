@@ -34,6 +34,9 @@ const {
   deleteProductImage,
 } = require('./integrations/storageAdapter')
 
+const cookieParser = require('cookie-parser')
+const googleRoutes = require('./auth/googleRoutes')
+
 async function importSupplierProducts(format) {
   let products
 
@@ -173,6 +176,12 @@ const {
 } = require('./services/shippingService')
 
 const app = express()
+if (!process.env.OAUTH_COOKIE_SECRET) {
+  throw new Error('Missing OAUTH_COOKIE_SECRET')
+}
+
+app.use(cookieParser(process.env.OAUTH_COOKIE_SECRET))
+app.use('/api/auth', googleRoutes)
 const PORT = 3000
 
 app.use(cors())
