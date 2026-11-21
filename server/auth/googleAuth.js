@@ -1,9 +1,7 @@
-
-const oidc = require('openid-client')
-
 let googleConfig
 
 async function getGoogleConfig() {
+  const oidc = await import('openid-client')
   if (googleConfig) {
     return googleConfig
   }

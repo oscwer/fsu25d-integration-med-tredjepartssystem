@@ -7,7 +7,6 @@ const { z } = require('zod')
 const { findOrCreateCustomer } = require('../services/customerService')
 
 const express = require('express')
-const oidc = require('openid-client')
 const { getGoogleConfig } = require('./googleAuth')
 
 const router = express.Router()
@@ -20,6 +19,7 @@ const googleUserSchema = z.object({
 
 router.get('/google', async (req, res) => {
   try {
+    const oidc = await import('openid-client')
     const config = await getGoogleConfig()
 
     // Unika värden för varje inloggningsförsök.
@@ -64,6 +64,7 @@ router.get('/google', async (req, res) => {
 
 
 router.get('/google/callback', async (req, res) => {
+  const oidc = await import('openid-client')
   const cookieOptions = {
     path: '/api/auth/google',
   }
