@@ -37,6 +37,8 @@ const {
 const cookieParser = require('cookie-parser')
 const googleRoutes = require('./auth/googleRoutes')
 
+const { requireAuth } = require('./auth/requireAuth')
+
 async function importSupplierProducts(format) {
   let products
 
@@ -551,7 +553,7 @@ app.get('/api/search', async (req, res) => {
   }
 })
 
-app.post('/api/checkout', async (req, res) => {
+app.post('/api/checkout', requireAuth, async (req, res) => {
   const parsed = checkoutSchema.safeParse(req.body)
 
   if (!parsed.success) {
@@ -653,6 +655,7 @@ app.post('/api/checkout', async (req, res) => {
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .insert({
+        customer_id: req.customerId,
         customer_name: customerName,
         customer_email: customerEmail,
         status: 'pending',
