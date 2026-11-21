@@ -1,6 +1,3 @@
-
-const { SignJWT, jwtVerify } = require('jose')
-
 const encoder = new TextEncoder()
 
 function getJwtSecret() {
@@ -14,6 +11,7 @@ function getJwtSecret() {
 }
 
 async function createSessionToken(customerId) {
+  const { SignJWT } = await import('jose')
   return new SignJWT({})
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(String(customerId))
@@ -25,6 +23,7 @@ async function createSessionToken(customerId) {
 }
 
 async function verifySessionToken(token) {
+  const { jwtVerify } = await import('jose')
   const { payload } = await jwtVerify(
     token,
     getJwtSecret(),
