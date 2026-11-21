@@ -58,6 +58,12 @@ function App() {
   const [transitTime, setTransitTime] = useState(null)
   const [transitTimeError, setTransitTimeError] = useState('')
 
+  const [customer, setCustomer] = useState(null)
+
+  const [myOrders, setMyOrders] = useState([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [ordersError, setOrdersError] = useState('')
+
   async function handleImport(format) {
     if (!adminKey.trim()) {
       setImportError('Ange adminnyckeln först.')
@@ -196,6 +202,27 @@ function App() {
     }
 
     loadOrderStatus()
+  }, [])
+
+  useEffect(() => {
+    async function checkSession() {
+      try {
+        const response = await fetch('/api/auth/me')
+
+        if (!response.ok) {
+          setCustomer(null)
+          return
+        }
+
+        const data = await response.json()
+        setCustomer(data)
+      } catch (error) {
+        console.error('Could not check session:', error)
+        setCustomer(null)
+      }
+    }
+
+    checkSession()
   }, [])
 
   async function searchCatalog(page = 1) {
@@ -500,6 +527,47 @@ async function handleImageUpload(productId, file) {
     }
   }
 
+  async function loadMyOrders() {
+    setOrdersLoading(true)
+    setOrdersError('')
+
+    try {
+      const response = await fetch('/api/my/orders')
+
+      if (!response.ok) {
+        throw new Error('Could not fetch orders')
+      }
+
+      const data = await response.json()
+      setMyOrders(data.orders)
+    } catch (error) {
+      console.error(error)
+      setOrdersError('Kunde inte hämta dina beställningar.')
+    } finally {
+      setOrdersLoading(false)
+    }
+  }
+
+  function handleGoogleLogin() {
+    window.location.href = '/api/auth/google'
+  }
+
+  async function handleLogout() {
+    try {
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        throw new Error('Logout failed')
+      }
+
+      setCustomer(null)
+    } catch (error) {
+      console.error('Could not log out:', error)
+    }
+  }
+
   return (
     <main className="app">
 
@@ -558,6 +626,31 @@ async function handleImageUpload(productId, file) {
             >
               Admin
             </button>
+
+            {customer?.authenticated ? (
+              <div>
+                <span>Inloggad (kund #{customer.customerId})</span>
+                <button type="button" onClick={handleLogout}>
+                  Logga ut
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={handleGoogleLogin}>
+                Logga in med Google
+              </button>
+            )}
+            {customer?.authenticated && (
+              <button
+                className={activeView === 'my-orders' ? 'nav-link active' : 'nav-link'}
+                type="button"
+                onClick={() => {
+                  setActiveView('my-orders')
+                  loadMyOrders()
+                }}
+              >
+                Mina beställningar
+              </button>
+            )}
           </nav>
         </div>
       </header>
@@ -895,6 +988,36 @@ async function handleImageUpload(productId, file) {
           </section>
         )}
         </div>
+    )}
+
+    {activeView === 'my-orders' && customer?.authenticated && (
+      <div className="page-container">
+        <h1>Mina beställningar</h1>
+
+        {ordersLoading && <p>Hämtar beställningar...</p>}
+
+        {ordersError && <p role="alert">{ordersError}</p>}
+
+        {!ordersLoading && !ordersError && myOrders.length === 0 && (
+          <p>Du har inga beställningar ännu.</p>
+        )}
+
+        {!ordersLoading && !ordersError && myOrders.map((order) => (
+          <article key={order.id}>
+            <h2>Order #{order.id}</h2>
+            <p>Status: {order.status}</p>
+            <p>Datum: {new Date(order.created_at).toLocaleDateString('sv-SE')}</p>
+
+            <ul>
+              {order.order_items.map((item, index) => (
+                <li key={index}>
+                  {item.product_name} – {item.quantity} st × {item.unit_price} kr
+                </li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </div>
     )}
 
       {activeView === 'admin' && (

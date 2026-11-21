@@ -771,6 +771,39 @@ app.post('/api/checkout', requireAuth, async (req, res) => {
   }
 })
 
+app.get('/api/my/orders', requireAuth, async (req, res) => {
+  try {
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select(`
+        id,
+        created_at,
+        status,
+        customer_name,
+        shipping_cost,
+        order_items (
+          product_name,
+          quantity,
+          unit_price
+        )
+      `)
+      .eq('customer_id', req.customerId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      throw error
+    }
+
+    res.json({ orders })
+  } catch (error) {
+    console.error('Could not fetch customer orders:', error)
+
+    res.status(500).json({
+      error: 'Could not fetch order history',
+    })
+  }
+})
+
 app.get('/api/orders/:id/status', async (req, res) => {
   const { id } = req.params
 
