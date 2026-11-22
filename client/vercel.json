@@ -1,0 +1,9 @@
+
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://fsu25d-integration-med-tredjepartss.vercel.app/api/:path*"
+    }
+  ]
+}

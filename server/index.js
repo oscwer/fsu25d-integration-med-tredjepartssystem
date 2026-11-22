@@ -34,6 +34,15 @@ const {
   deleteProductImage,
 } = require('./integrations/storageAdapter')
 
+const cookieParser = require('cookie-parser')
+const googleRoutes = require('./auth/googleRoutes')
+
+const { requireAuth } = require('./auth/requireAuth')
+
+const {
+  processOrderConfirmation,
+} = require('./services/orderConfirmationService')
+
 async function importSupplierProducts(format) {
   let products
 
@@ -173,6 +182,12 @@ const {
 } = require('./services/shippingService')
 
 const app = express()
+if (!process.env.OAUTH_COOKIE_SECRET) {
+  throw new Error('Missing OAUTH_COOKIE_SECRET')
+}
+
+app.use(cookieParser(process.env.OAUTH_COOKIE_SECRET))
+app.use('/api/auth', googleRoutes)
 const PORT = 3000
 
 app.use(cors())
@@ -246,6 +261,14 @@ app.post(
         }
 
         console.log(`Order ${order.id}: ${result}`)
+        try {
+          await processOrderConfirmation(supabase, order.id)
+        } catch (emailError) {
+          console.error(
+            `Order ${order.id}: confirmation email failed:`,
+            emailError
+          )
+        }
       }
 
       if (event.type === 'checkout.session.expired') {
@@ -542,7 +565,7 @@ app.get('/api/search', async (req, res) => {
   }
 })
 
-app.post('/api/checkout', async (req, res) => {
+app.post('/api/checkout', requireAuth, async (req, res) => {
   const parsed = checkoutSchema.safeParse(req.body)
 
   if (!parsed.success) {
@@ -644,6 +667,7 @@ app.post('/api/checkout', async (req, res) => {
     const { data: order, error: orderError } = await supabase
       .from('orders')
       .insert({
+        customer_id: req.customerId,
         customer_name: customerName,
         customer_email: customerEmail,
         status: 'pending',
@@ -755,6 +779,39 @@ app.post('/api/checkout', async (req, res) => {
 
     res.status(500).json({
       error: 'Could not validate checkout',
+    })
+  }
+})
+
+app.get('/api/my/orders', requireAuth, async (req, res) => {
+  try {
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select(`
+        id,
+        created_at,
+        status,
+        customer_name,
+        shipping_cost,
+        order_items (
+          product_name,
+          quantity,
+          unit_price
+        )
+      `)
+      .eq('customer_id', req.customerId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      throw error
+    }
+
+    res.json({ orders })
+  } catch (error) {
+    console.error('Could not fetch customer orders:', error)
+
+    res.status(500).json({
+      error: 'Could not fetch order history',
     })
   }
 })

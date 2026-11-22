@@ -13,12 +13,16 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
     "algoliasearch": "^5.61.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "csv-parse": "^7.0.3",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "fast-xml-parser": "^5.11.2",
+    "jose": "^6.2.18",
     "multer": "^2.5.0",
+    "openid-client": "^6.9.1",
+    "resend": "^6.39.0",
     "stripe": "^23.1.0",
     "zod": "^4.6.7"
   }
