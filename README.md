@@ -23,19 +23,57 @@ The application is an educational project. Payments use Stripe test mode. Please
 | Supabase Storage | Upload and display product images |
 | PostNord API | Find nearby service points using a Swedish postal code |
 | Supabase PostgreSQL | Persist products, orders, order items and delivery selections |
+| Google OAuth / OIDC | Google sign-in, customer sessions and protected order history |
+| Resend | Transactional order confirmation emails after verified Stripe payments |
 
 The shop also includes a product catalog, shopping cart, basic administrative functionality and inventory management.
 
 ### Checkout and payment flow
 
-1. The customer adds products to the cart and selects a PostNord service point.
-2. The Express backend validates the products, quantities and delivery selection.
-3. Product prices and shipping costs are calculated on the server.
-4. The customer is redirected to Stripe Checkout.
-5. Stripe sends a signed webhook to the backend after payment.
-6. A PostgreSQL function updates the order status and inventory atomically.
+1. The customer signs in using Google OAuth / OpenID Connect.
+2. The customer adds products to the cart and selects a PostNord service point.
+3. The Express backend validates the session, products, quantities and delivery selection.
+4. Product prices and shipping costs are calculated server-side.
+5. A pending order is created in Supabase and associated with the authenticated customer.
+6. The customer completes a test payment through Stripe Checkout.
+7. Stripe sends a signed webhook to the backend.
+8. A PostgreSQL function atomically finalizes the payment and updates inventory.
+9. The backend sends an order confirmation email through Resend.
+10. The customer can view their own purchases under **Mina beställningar**.
 
-The payment handler is idempotent to prevent duplicate stock reductions when the same payment event is processed more than once.
+Payment processing is idempotent to prevent duplicate inventory updates. Order confirmation emails use an atomic database claim, persisted delivery status and a Resend idempotency key to reduce duplicate sends.
+
+### Authentication and customer order history
+
+Customers authenticate using Google OAuth 2.0 and OpenID Connect with the authorization code flow and PKCE.
+
+After successful authentication, the backend verifies the Google identity token, identifies the customer using Google's stable `sub` identifier and creates an application session using a signed JWT stored in an HTTP-only cookie.
+
+Protected API endpoints include:
+
+- `GET /api/auth/me` – Verify the current session.
+- `POST /api/auth/logout` – End the current session.
+- `POST /api/checkout` – Create an order for the authenticated customer.
+- `GET /api/my/orders` – Retrieve the authenticated customer's order history.
+
+Customer IDs are derived from verified server-side sessions rather than trusted from client input.
+
+Orders are associated with customers through `orders.customer_id`. The order history endpoint filters results using the authenticated customer's ID to prevent access to other customers' orders.
+
+### Order confirmation emails
+
+Order confirmation emails are sent using Resend after Stripe confirms a successful payment through a signed webhook.
+
+The confirmation contains the order number, customer name, purchased products, quantities, prices, shipping cost and total amount.
+
+The email integration is implemented in separate backend service modules:
+
+- `server/services/emailService.js` – Builds and sends HTML and plain-text emails.
+- `server/services/orderConfirmationService.js` – Coordinates email delivery and database status updates.
+
+To reduce duplicate emails, the application uses an atomic PostgreSQL claim function, persisted confirmation timestamps and a Resend idempotency key.
+
+Email failures are logged separately and do not reverse completed payments or cause the payment webhook to fail after successful payment finalization.
 
 ## Tech stack
 
@@ -92,6 +130,20 @@ POSTNORD_ORIGIN_POSTCODE=
 IMPORT_ADMIN_KEY=
 ```
 
+# Google OAuth / OIDC
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
+FRONTEND_URL=http://localhost:5173
+
+# Authentication and sessions
+OAUTH_COOKIE_SECRET=
+JWT_SECRET=
+
+# Transactional emails
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=onboarding@resend.dev
+
 Additional configuration is required for Algolia and the supplier integrations.
 
 Never commit real credentials or `.env` files to Git.
@@ -110,7 +162,12 @@ npm run dev
 
 Vite runs the frontend locally and proxies `/api` requests to the Express backend when no external API URL is configured.
 
-For the deployed frontend, `VITE_API_URL` must point to the public backend URL without a trailing slash.
+The frontend uses relative `/api/*` requests. In local development,
+Vite proxies these requests to Express. In production, Vercel rewrites
+them to the separately deployed backend.
+
+This same-origin approach is also used for Google OAuth callbacks
+and HTTP-only session cookies.
 
 ## Testing and verification
 
@@ -128,6 +185,19 @@ Examples include:
 - A successful end-to-end test payment on the deployed application.
 
 A payment recovery test also demonstrated that a paid Stripe session could be verified and an order safely finalized after the automatic webhook process had failed.
+
+### Authentication and email integration tests
+
+The following scenarios were manually verified in the deployed application:
+
+- Successful Google sign-in and sign-out.
+- Session persistence after page reload.
+- HTTP 401 when an unauthenticated user requests protected order history.
+- Checkout orders associated with the authenticated customer.
+- Order history displaying purchased products and order status.
+- A second authenticated Google account unable to access the first customer's orders.
+- Successful Stripe test payment followed by an automatic Resend order confirmation.
+- Confirmation email status persisted in Supabase.
 
 ## Security
 
@@ -149,6 +219,10 @@ The admin key approach is a simplified educational solution and is not a substit
 - The payment confirmation page does not automatically poll for delayed webhook updates.
 - The admin interface and authorization model require further development before real-world use.
 - The application is a demonstration project and is not intended for live commercial transactions.
+- Resend currently uses the testing sender `onboarding@resend.dev`. Emails can only be sent to the permitted test recipient until a custom sending domain is verified.
+- Email sending includes duplicate protection, but a complete persistent retry queue for failed deliveries has not been implemented.
+- Google authentication protects customer checkout and order history. The existing administrative authorization remains a separate simplified educational solution.
+- The application uses Stripe test mode and is not intended for real purchases.
 
 # Reflektion – Integration med tredjepartssystem
 
