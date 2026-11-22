@@ -39,6 +39,10 @@ const googleRoutes = require('./auth/googleRoutes')
 
 const { requireAuth } = require('./auth/requireAuth')
 
+const {
+  processOrderConfirmation,
+} = require('./services/orderConfirmationService')
+
 async function importSupplierProducts(format) {
   let products
 
@@ -257,6 +261,14 @@ app.post(
         }
 
         console.log(`Order ${order.id}: ${result}`)
+        try {
+          await processOrderConfirmation(supabase, order.id)
+        } catch (emailError) {
+          console.error(
+            `Order ${order.id}: confirmation email failed:`,
+            emailError
+          )
+        }
       }
 
       if (event.type === 'checkout.session.expired') {

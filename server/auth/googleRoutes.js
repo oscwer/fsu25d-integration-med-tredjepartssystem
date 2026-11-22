@@ -140,7 +140,7 @@ router.get('/google/callback', async (req, res) => {
     path: '/',
     })
 
-    return res.redirect('/api/auth/me')
+    return res.redirect(process.env.FRONTEND_URL)
 
 
   } catch (error) {
