@@ -60,6 +60,10 @@ Customer IDs are derived from verified server-side sessions rather than trusted 
 
 Orders are associated with customers through `orders.customer_id`. The order history endpoint filters results using the authenticated customer's ID to prevent access to other customers' orders.
 
+**Session design:** I chose a signed JWT stored in an HTTP-only cookie for the shop's own authentication. This allows the backend to verify the customer's identity without storing a separate server-side session for every login. The HTTP-only attribute prevents frontend JavaScript from reading the token, while Secure cookies are used over HTTPS in production. SameSite=Lax provides some protection against cross-site requests. The JWT has a limited lifetime and is verified by the backend before protected resources are accessed.
+
+Unlike storing tokens in localStorage, this approach keeps the session token inaccessible to frontend JavaScript. A limitation is that JWT sessions require additional mechanisms for immediate server-side revocation before expiration.
+
 ### Order confirmation emails
 
 Order confirmation emails are sent using Resend after Stripe confirms a successful payment through a signed webhook.

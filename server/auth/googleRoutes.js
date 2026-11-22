@@ -128,7 +128,7 @@ router.get('/google/callback', async (req, res) => {
     const customer = await findOrCreateCustomer(googleUser)
 
 
-    // Tillfällig verifiering, ingen permanent inloggning ännu.
+    // Skapa shoppens egen session efter verifierad Google-inloggning.
     
     const sessionToken = await createSessionToken(customer.id)
 
