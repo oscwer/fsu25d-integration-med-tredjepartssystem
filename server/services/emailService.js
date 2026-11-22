@@ -1,4 +1,5 @@
 const { Resend } = require('resend')
+const { z } = require('zod')
 
 const escapeHtml = (value) =>
   String(value).replace(/[&<>"']/g, (char) => {
@@ -12,6 +13,10 @@ const escapeHtml = (value) =>
 
     return entities[char]
   })
+
+const resendResponseSchema = z.object({
+    id: z.string().uuid(),
+})
 
 async function sendOrderConfirmation(supabase, orderId) {
   const { data: order, error } = await supabase
@@ -85,26 +90,32 @@ async function sendOrderConfirmation(supabase, orderId) {
     `Totalt: ${formatPrice(total)}`,
   ].join('\n')
 
-  const resend = new Resend(process.env.RESEND_API_KEY)
+    const resend = new Resend(process.env.RESEND_API_KEY)
+    const signal = AbortSignal.timeout(8000)
 
-  const { data, error: sendError } = await resend.emails.send(
+    const { data, error: sendError } = await resend.emails.send(
     {
-      from: process.env.RESEND_FROM_EMAIL,
-      to: [order.customer_email],
-      subject: `Orderbekräftelse #${order.id} – Oscar's Random Shop`,
-      html,
-      text,
+        from: process.env.RESEND_FROM_EMAIL,
+        to: [order.customer_email],
+        subject: `Orderbekräftelse #${order.id} – Oscar's Random Shop`,
+        html,
+        text,
     },
     {
-      idempotencyKey: `order-confirmation-${order.id}`,
+        idempotencyKey: `order-confirmation-${order.id}`,
+        signal,
     }
-  )
+    )
 
-  if (sendError) {
+    if (sendError) {
     throw new Error(`Resend failed: ${sendError.message}`)
-  }
+    }
 
-  return data
+    const validatedResponse = resendResponseSchema.parse(data)
+
+    return validatedResponse
+
+    return validatedResponse
 }
 
 module.exports = { sendOrderConfirmation }
